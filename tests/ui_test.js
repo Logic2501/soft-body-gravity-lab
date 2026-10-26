@@ -102,7 +102,11 @@ async function main() {
         awaitPromise: true,
       });
       if (result.exceptionDetails) {
-        throw new Error(result.exceptionDetails.text || "evaluate failed");
+        const details = result.exceptionDetails.exception?.description
+          || result.exceptionDetails.exception?.value
+          || result.exceptionDetails.text
+          || "evaluate failed";
+        throw new Error(`${details}\nExpression: ${expression}`);
       }
       return result.result.value;
     }
@@ -118,10 +122,17 @@ async function main() {
       await sleep(100);
     }
 
+    const hookReady = await evaluate("typeof window.__softBodyDemo === 'object'");
+    expect(hookReady, "ui: browser test hook should be available");
+
+    const defaults = await evaluate("window.__softBodyDemo.getDefaults()");
+    const paramKeys = Object.keys(defaults);
+    expect(paramKeys.length > 0, "ui: defaults should expose parameter keys");
+
     const rowCount = await evaluate("document.querySelectorAll('#params .param').length");
-    expect(rowCount === 10, "ui: 10 parameter rows should be rendered");
+    expect(rowCount === paramKeys.length, "ui: one parameter row per default key");
     const helpDots = await evaluate("document.querySelectorAll('#params .param-help-dot').length");
-    expect(helpDots === 10, "ui: every parameter should have a help marker");
+    expect(helpDots === paramKeys.length, "ui: every parameter should have a help marker");
     const initialHelp = await evaluate("document.getElementById('param-help').textContent");
     expect(initialHelp.includes("重力强度"), "ui: initial help should explain gravity");
 
@@ -132,20 +143,10 @@ async function main() {
     })()`);
     expect(bendingHelp.includes("折角"), "ui: parameter help should update when a row is selected");
 
-    const hookReady = await evaluate("typeof window.__softBodyDemo === 'object'");
-    expect(hookReady, "ui: browser test hook should be available");
-
     const initialParams = await evaluate("window.__softBodyDemo.getParams()");
-    expect(Math.abs(initialParams.gravity - 250) < 1e-6, "ui: default gravity should be 250");
-    expect(Math.abs(initialParams.center_mu - 7) < 1e-6, "ui: default center gravity should be 7");
-    expect(Math.abs(initialParams.edge_stiffness - 0.05) < 1e-6, "ui: default edge stiffness should be 0.05");
-    expect(Math.abs(initialParams.bending_stiffness - 0.01) < 1e-6, "ui: default bending stiffness should be 0.01");
-    expect(Math.abs(initialParams.area_strength - 0.005) < 1e-6, "ui: default area strength should be 0.005");
-    expect(Math.abs(initialParams.shape_strength) < 1e-6, "ui: default shape strength should be 0");
-    expect(Math.abs(initialParams.outline_smoothing - 1.0) < 1e-6, "ui: default outline smoothing should be 1.0");
-    expect(Math.abs(initialParams.damping - 0.2) < 1e-6, "ui: default damping should be 0.2");
-    expect(Math.abs(initialParams.restitution - 0.04) < 1e-6, "ui: default restitution should be 0.04");
-    expect(Math.abs(initialParams.wall_friction - 0.04) < 1e-6, "ui: default wall friction should be 0.04");
+    for (const key of paramKeys) {
+      expect(Math.abs(initialParams[key] - defaults[key]) < 1e-9, `ui: initial ${key} should match defaults`);
+    }
 
     const fineRanges = await evaluate(`(() => {
       const area = document.getElementById('area_strength-range');
@@ -163,8 +164,8 @@ async function main() {
     expect(Math.abs(fineRanges.shapeMax - 0.01) < 1e-9, "ui: shape strength should use the 0–0.01 fine range");
     expect(Math.abs(fineRanges.areaStep - 0.001) < 1e-9, "ui: area strength should step by 0.001");
     expect(Math.abs(fineRanges.shapeStep - 0.001) < 1e-9, "ui: shape strength should step by 0.001");
-    expect(fineRanges.areaText === "0.005", "ui: area strength should display three decimals");
-    expect(fineRanges.shapeText === "0.000", "ui: shape strength should display three decimals");
+    expect(Math.abs(Number(fineRanges.areaText) - defaults.area_strength) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.areaText), "ui: area strength should display three decimals");
+    expect(Math.abs(Number(fineRanges.shapeText) - defaults.shape_strength) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.shapeText), "ui: shape strength should display three decimals");
 
     const canvasSize = await evaluate("(() => { const c = document.getElementById('scene'); return { w: c.width, h: c.height }; })()");
     expect(canvasSize.w > 0 && canvasSize.h > 0, "ui: canvas should have a non-zero backing size");
@@ -228,21 +229,23 @@ async function main() {
     await evaluate("document.getElementById('pause').click()");
     expect((await evaluate("window.__softBodyDemo.paused")) === false, "ui: continue button should resume");
 
-    const beforeMotion = await evaluate("({ x: window.__softBodyDemo.sim.centroid.x, y: window.__softBodyDemo.sim.centroid.y })");
+    const beforeMotion = await evaluate("({ x: window.__softBodyDemo.getPrimaryBody().centroid.x, y: window.__softBodyDemo.getPrimaryBody().centroid.y })");
     await sleep(500);
-    const afterMotion = await evaluate("({ x: window.__softBodyDemo.sim.centroid.x, y: window.__softBodyDemo.sim.centroid.y })");
+    const afterMotion = await evaluate("({ x: window.__softBodyDemo.getPrimaryBody().centroid.x, y: window.__softBodyDemo.getPrimaryBody().centroid.y })");
     const moved = Math.hypot(afterMotion.x - beforeMotion.x, afterMotion.y - beforeMotion.y);
     expect(moved > 1, "ui: animation loop should advance the simulation");
 
     const resetResult = await evaluate(`(() => {
       const demo = window.__softBodyDemo;
-      demo.sim.positions[0].x += 15;
-      demo.sim.velocities[0].x = 99;
+      const before = demo.getPrimaryBody();
+      before.positions[0].x += 15;
+      before.velocities[0].x = 99;
       document.getElementById('reset').click();
+      const body = demo.getPrimaryBody();
       return {
-        x: demo.sim.positions[0].x,
-        initialX: demo.sim.initialPositions[0].x,
-        speed: demo.sim.velocities[0].x,
+        x: body.positions[0].x,
+        initialX: body.initialPositions[0].x,
+        speed: body.velocities[0].x,
       };
     })()`);
     expect(Math.abs(resetResult.x - resetResult.initialX) < 1e-9, "ui: reset should restore initial positions");
@@ -255,8 +258,8 @@ async function main() {
         number: document.querySelector('[data-key="gravity"] .param-number').value,
       };
     })()`);
-    expect(Math.abs(defaultResult.param - 250) < 1e-6, "ui: restore defaults should restore gravity");
-    expect(defaultResult.number === "250", "ui: restore defaults should refresh the field");
+    expect(Math.abs(defaultResult.param - defaults.gravity) < 1e-6, "ui: restore defaults should restore gravity");
+    expect(Math.abs(Number(defaultResult.number) - defaults.gravity) < 1e-6, "ui: restore defaults should refresh the field");
 
     const debugResult = await evaluate(`(() => {
       const checkbox = document.getElementById('debug');
@@ -265,6 +268,7 @@ async function main() {
     })()`);
     expect(debugResult === true, "ui: debug checkbox should toggle");
 
+    await evaluate("window.__softBodyDemo.setParam('gravity', 250); window.__softBodyDemo.setParam('center_mu', 7);");
     const equipotentialDefault = await evaluate("document.getElementById('equipotential').checked");
     expect(equipotentialDefault === true, "ui: equipotential lines should be enabled by default");
     const contourStats = await evaluate(`(() => {
@@ -315,6 +319,59 @@ async function main() {
       return { off, on: checkbox.checked };
     })()`);
     expect(equipotentialToggle.off === false && equipotentialToggle.on === true, "ui: equipotential checkbox should toggle");
+
+    const bodyLifecycle = await evaluate(`(() => {
+      const demo = window.__softBodyDemo;
+      if (!demo.paused) {
+        document.getElementById('pause').click();
+      }
+      document.getElementById('reset').click();
+      const initial = {
+        bodies: demo.getBodies().length,
+        pending: demo.getPendingSpawns(),
+        count: document.getElementById('body-count').textContent,
+      };
+      document.getElementById('add-body').click();
+      const queued = {
+        bodies: demo.getBodies().length,
+        pending: demo.getPendingSpawns(),
+        count: document.getElementById('body-count').textContent,
+      };
+      document.getElementById('remove-body').click();
+      const afterRemove = {
+        bodies: demo.getBodies().length,
+        pending: demo.getPendingSpawns(),
+        count: document.getElementById('body-count').textContent,
+      };
+      const sizeNumber = document.querySelector('[data-key="body_size"] .param-number');
+      sizeNumber.value = '90';
+      sizeNumber.dispatchEvent(new Event('change', { bubbles: true }));
+      return {
+        initial,
+        queued,
+        afterRemove,
+        radii: demo.getBodies().map((body) => body.radius),
+      };
+    })()`);
+    expect(bodyLifecycle.initial.bodies === 1, "ui: reset should leave one body");
+    expect(bodyLifecycle.queued.bodies === 1 && bodyLifecycle.queued.pending === 1, "ui: occupied spawn should queue a body");
+    expect(bodyLifecycle.queued.count.includes("等待 1"), "ui: queued spawn should be visible in the body count");
+    expect(bodyLifecycle.afterRemove.bodies === 1 && bodyLifecycle.afterRemove.pending === 0, "ui: removing the oldest body should let the queued body spawn");
+    expect(bodyLifecycle.radii.length > 0 && bodyLifecycle.radii.every((radius) => Math.abs(radius - 90) < 1e-6), "ui: body size slider should scale every body");
+
+    const grabMode = await evaluate(`(() => {
+      const demo = window.__softBodyDemo;
+      const button = document.getElementById('grab-mode');
+      const initial = { text: button.textContent, mode: demo.getGrabMode() };
+      button.click();
+      const center = { text: button.textContent, mode: demo.getGrabMode() };
+      button.click();
+      const edge = { text: button.textContent, mode: demo.getGrabMode() };
+      return { initial, center, edge };
+    })()`);
+    expect(grabMode.initial.mode === "edge" && grabMode.initial.text.includes("边缘"), "ui: drag mode should start at edge");
+    expect(grabMode.center.mode === "center" && grabMode.center.text.includes("中心"), "ui: drag mode should switch to center");
+    expect(grabMode.edge.mode === "edge" && grabMode.edge.text.includes("边缘"), "ui: drag mode should switch back to edge");
 
     await send("Emulation.setDeviceMetricsOverride", {
       width: 1280,

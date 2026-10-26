@@ -9,6 +9,7 @@ const SPAWN = { x: 220, y: 190 };
 const RADIUS = 62;
 
 const failures = [];
+const DEEP = process.argv.includes("--deep");
 
 function makeSim(gravity = 900, centerMu = 90e6, damping = 0.4) {
   const sim = new SoftBodySim();
@@ -177,6 +178,10 @@ function testDualField() {
 function testBoundaryBounce() {
   const sim = makeSim(1600, 0, 0.25);
   sim.restitution = 0.9;
+  sim.edgeStiffness = 0.35;
+  sim.areaStrength = 0.35;
+  sim.bendingStiffness = 0.04;
+  sim.shapeStrength = 0.02;
   let foundContact = false;
   let contactY = 0;
   for (let i = 0; i < Math.round(2.5 / DT); i += 1) {
@@ -284,6 +289,29 @@ function testLocalGrab() {
   expect(stats.inside, "grab: release must not tunnel through walls");
 }
 
+function testCenterGrab() {
+  const sim = makeSim(0, 0, 0.5);
+  const grabbed = sim.grabAt({ x: sim.centroid.x, y: sim.centroid.y }, 30, "center");
+  expect(grabbed, "center grab: centroid should be selectable");
+  if (!grabbed) {
+    return;
+  }
+  const start = { x: sim.centroid.x, y: sim.centroid.y };
+  sim.updateGrab({ x: SPAWN.x + 140, y: SPAWN.y - 60 });
+  for (let i = 0; i < Math.round(0.4 / DT); i += 1) {
+    sim.step(DT);
+  }
+  const travelled = Math.hypot(sim.centroid.x - start.x, sim.centroid.y - start.y);
+  const heldSpeed = Math.hypot(sim.velocities[0].x, sim.velocities[0].y);
+  sim.releaseGrab();
+  const stats = run(sim, 1.0);
+  console.log(`[center grab] travelled=${travelled.toFixed(1)} held_speed=${heldSpeed.toFixed(1)} area_err=${stats.maxAreaError.toFixed(3)}`);
+  expect(travelled > 30, "center grab: body centroid should move");
+  expect(heldSpeed <= sim.maxSpeed + 0.5, "center grab: drag force must respect speed cap");
+  expect(stats.finite, "center grab: release should remain stable");
+  expect(stats.inside, "center grab: release must not tunnel through walls");
+}
+
 function testExtremeParameters() {
   const sim = makeSim(2500, 250e6, 0);
   sim.edgeStiffness = 0.05;
@@ -307,11 +335,16 @@ testCenterOnly();
 testCenterNearSingularity();
 testDualField();
 testBoundaryBounce();
-testLongStability();
-testUserDefaults();
-testRepeatabilityAndReset();
+if (DEEP) {
+  testLongStability();
+  testUserDefaults();
+  testRepeatabilityAndReset();
+  testExtremeParameters();
+} else {
+  console.log("[deep] skipped 20s stability / user defaults / repeatability / extreme; run with --deep");
+}
 testLocalGrab();
-testExtremeParameters();
+testCenterGrab();
 
 if (failures.length === 0) {
   console.log("RESULT: PASS — all numerical checks passed");

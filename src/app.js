@@ -15,6 +15,7 @@
   const FIXED_STEP = 1 / 240;
   const MAX_STEPS_PER_FRAME = 24;
   const METRICS_INTERVAL = 0.25;
+  const CENTER_EPSILON = 70;
   const CONTOUR_CELL = 10;
   const CONTOUR_COLOR = "rgba(108, 224, 214, 0.26)";
   const CONTOUR_MAJOR = "rgba(140, 244, 226, 0.40)";
@@ -57,6 +58,16 @@
       decimals: 0,
       unit: "×10⁶",
       help: "指向画面中心引力源的强度。越大越快被吸向中心；近距离会自动软化，不会无限加速。",
+    },
+    {
+      key: "body_size",
+      label: "软体大小",
+      min: 30,
+      max: 120,
+      step: 1,
+      decimals: 0,
+      unit: "px",
+      help: "同时缩放所有软体；新增软体也使用这个大小。默认出生点需要足够空间。",
     },
     {
       key: "edge_stiffness",
@@ -142,8 +153,8 @@
 
   const PARAM_BY_KEY = Object.fromEntries(PARAMS.map((param) => [param.key, param]));
 
-  const sim = new SoftBodySim();
-  sim.setup(ARENA, CENTER, SPAWN, RADIUS);
+  const templateSim = new SoftBodySim();
+  templateSim.setup(ARENA, CENTER, SPAWN, RADIUS);
 
   const canvas = document.getElementById("scene");
   const ctx = canvas.getContext("2d");
@@ -151,21 +162,30 @@
   const pauseButton = document.getElementById("pause");
   const resetButton = document.getElementById("reset");
   const defaultsButton = document.getElementById("defaults");
+  const addBodyButton = document.getElementById("add-body");
+  const removeBodyButton = document.getElementById("remove-body");
+  const bodyCountEl = document.getElementById("body-count");
+  const grabModeButton = document.getElementById("grab-mode");
   const debugCheckbox = document.getElementById("debug");
   const equipotentialCheckbox = document.getElementById("equipotential");
   const paramHelpEl = document.getElementById("param-help");
   const statusEl = document.getElementById("status");
   const metricsEl = document.getElementById("metrics");
 
+  const bodies = [];
   const rowElements = {};
+  let bodySize = RADIUS;
   let outlineSmoothing = 1.0;
-  const values = snapshotParams();
+  const values = snapshotParams(templateSim);
   const defaultValues = { ...values };
 
   let dpr = 1;
   let paused = false;
   let dragging = false;
   let activePointer = null;
+  let activeBody = null;
+  let pendingSpawns = 0;
+  let grabMode = "edge";
   let debugDraw = false;
   let showEquipotential = true;
   let contourCache = null;
@@ -173,18 +193,19 @@
   let accumulator = 0;
   let metricsTimer = 0;
 
-  function snapshotParams() {
+  function snapshotParams(sourceSim) {
     return {
-      gravity: sim.gravity,
-      center_mu: sim.centerMu / 1e6,
-      edge_stiffness: sim.edgeStiffness,
-      bending_stiffness: sim.bendingStiffness,
-      area_strength: sim.areaStrength,
-      shape_strength: sim.shapeStrength,
+      gravity: sourceSim.gravity,
+      center_mu: sourceSim.centerMu / 1e6,
+      body_size: bodySize,
+      edge_stiffness: sourceSim.edgeStiffness,
+      bending_stiffness: sourceSim.bendingStiffness,
+      area_strength: sourceSim.areaStrength,
+      shape_strength: sourceSim.shapeStrength,
       outline_smoothing: outlineSmoothing,
-      damping: sim.damping,
-      restitution: sim.restitution,
-      wall_friction: sim.wallFriction,
+      damping: sourceSim.damping,
+      restitution: sourceSim.restitution,
+      wall_friction: sourceSim.wallFriction,
     };
   }
 
@@ -310,40 +331,136 @@
     return true;
   }
 
+  function applyParamsToBody(body) {
+    body.gravity = values.gravity;
+    body.centerMu = values.center_mu * 1e6;
+    body.edgeStiffness = values.edge_stiffness;
+    body.bendingStiffness = values.bending_stiffness;
+    body.areaStrength = values.area_strength;
+    body.shapeStrength = values.shape_strength;
+    body.damping = values.damping;
+    body.restitution = values.restitution;
+    body.wallFriction = values.wall_friction;
+  }
+
   function applyParameterToSim(key, displayValue) {
-    switch (key) {
-      case "gravity":
-        sim.gravity = displayValue;
-        break;
-      case "center_mu":
-        sim.centerMu = displayValue * 1e6;
-        break;
-      case "edge_stiffness":
-        sim.edgeStiffness = displayValue;
-        break;
-      case "bending_stiffness":
-        sim.bendingStiffness = displayValue;
-        break;
-      case "area_strength":
-        sim.areaStrength = displayValue;
-        break;
-      case "shape_strength":
-        sim.shapeStrength = displayValue;
-        break;
-      case "outline_smoothing":
-        outlineSmoothing = displayValue;
-        break;
-      case "damping":
-        sim.damping = displayValue;
-        break;
-      case "restitution":
-        sim.restitution = displayValue;
-        break;
-      case "wall_friction":
-        sim.wallFriction = displayValue;
-        break;
-      default:
-        break;
+    if (key === "body_size") {
+      bodySize = displayValue;
+      for (const body of bodies) {
+        body.setRadius(bodySize);
+      }
+      updateBodyCount();
+      return;
+    }
+    if (key === "outline_smoothing") {
+      outlineSmoothing = displayValue;
+      return;
+    }
+    for (const body of bodies) {
+      switch (key) {
+        case "gravity":
+          body.gravity = displayValue;
+          break;
+        case "center_mu":
+          body.centerMu = displayValue * 1e6;
+          break;
+        case "edge_stiffness":
+          body.edgeStiffness = displayValue;
+          break;
+        case "bending_stiffness":
+          body.bendingStiffness = displayValue;
+          break;
+        case "area_strength":
+          body.areaStrength = displayValue;
+          break;
+        case "shape_strength":
+          body.shapeStrength = displayValue;
+          break;
+        case "damping":
+          body.damping = displayValue;
+          break;
+        case "restitution":
+          body.restitution = displayValue;
+          break;
+        case "wall_friction":
+          body.wallFriction = displayValue;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  function createBody() {
+    const body = new SoftBodySim();
+    body.setup(ARENA, CENTER, SPAWN, bodySize);
+    applyParamsToBody(body);
+    return body;
+  }
+
+  function bodyBoundingRadius(body) {
+    let radius = 0;
+    for (const point of body.positions) {
+      radius = Math.max(radius, Math.hypot(point.x - body.centroid.x, point.y - body.centroid.y));
+    }
+    return radius;
+  }
+
+  function isSpawnFree() {
+    for (const body of bodies) {
+      const distanceToSpawn = Math.hypot(body.centroid.x - SPAWN.x, body.centroid.y - SPAWN.y);
+      if (distanceToSpawn < bodySize + bodyBoundingRadius(body) + 6) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function updateBodyCount() {
+    if (bodyCountEl) {
+      const base = `${bodies.length} 个软体`;
+      bodyCountEl.textContent = pendingSpawns > 0 ? `${base} · 等待 ${pendingSpawns}` : base;
+    }
+    if (removeBodyButton) {
+      removeBodyButton.disabled = bodies.length === 0;
+    }
+  }
+
+  function addBodyNow() {
+    bodies.push(createBody());
+    updateBodyCount();
+    updateMetrics();
+    return true;
+  }
+
+  function requestAddBody() {
+    if (isSpawnFree()) {
+      addBodyNow();
+    } else {
+      pendingSpawns += 1;
+      updateBodyCount();
+    }
+  }
+
+  function removeOldestBody() {
+    if (bodies.length === 0) {
+      return;
+    }
+    const removed = bodies.shift();
+    if (activeBody === removed) {
+      endDrag();
+    }
+    processPendingSpawns();
+    updateBodyCount();
+    updateMetrics();
+  }
+
+  function processPendingSpawns() {
+    if (pendingSpawns > 0 && isSpawnFree()) {
+      pendingSpawns -= 1;
+      bodies.push(createBody());
+      updateBodyCount();
+      updateMetrics();
     }
   }
 
@@ -362,10 +479,25 @@
     setPaused(!paused);
   }
 
+  function setGrabMode(mode) {
+    grabMode = mode === "center" ? "center" : "edge";
+    endDrag();
+    grabModeButton.textContent = grabMode === "center" ? "拖拽点：中心" : "拖拽点：边缘";
+    grabModeButton.classList.toggle("active", grabMode === "center");
+    grabModeButton.setAttribute("aria-pressed", String(grabMode === "center"));
+  }
+
+  function toggleGrabMode() {
+    setGrabMode(grabMode === "edge" ? "center" : "edge");
+  }
+
   function resetSimulation() {
     endDrag();
-    sim.reset();
+    bodies.length = 0;
+    pendingSpawns = 0;
+    bodies.push(createBody());
     metricsTimer = 0;
+    updateBodyCount();
     updateMetrics();
   }
 
@@ -377,8 +509,20 @@
   }
 
   function updateMetrics() {
-    const contact = sim.lastContact ? " · 接触边界" : "";
-    metricsEl.textContent = `最大速度 ${Math.round(sim.lastMaxSpeed)} px/s\n面积误差 ${(sim.lastAreaError * 100).toFixed(1)}%${contact}`;
+    if (bodies.length === 0) {
+      metricsEl.textContent = "无软体 · 点击 + 添加";
+      return;
+    }
+    let maxSpeed = 0;
+    let maxAreaError = 0;
+    let contact = false;
+    for (const body of bodies) {
+      maxSpeed = Math.max(maxSpeed, body.lastMaxSpeed);
+      maxAreaError = Math.max(maxAreaError, body.lastAreaError);
+      contact = contact || body.lastContact;
+    }
+    const contactText = contact ? " · 接触边界" : "";
+    metricsEl.textContent = `最大速度 ${Math.round(maxSpeed)} px/s\n最大面积误差 ${(maxAreaError * 100).toFixed(1)}%${contactText}`;
   }
 
   function setupCanvas() {
@@ -401,14 +545,61 @@
   }
 
   function endDrag() {
+    if (activeBody) {
+      activeBody.releaseGrab();
+    }
+    activeBody = null;
     if (!dragging) {
-      sim.releaseGrab();
       return;
     }
     dragging = false;
     activePointer = null;
-    sim.releaseGrab();
     canvas.classList.remove("grabbing");
+  }
+
+  function findGrabBody(point) {
+    if (grabMode === "center") {
+      let bestBody = null;
+      let bestDistance = Infinity;
+      for (const body of bodies) {
+        const distance = Math.hypot(body.centroid.x - point.x, body.centroid.y - point.y);
+        const threshold = Math.max(body.restRadius * 1.5 + 12, 70);
+        if (distance <= threshold && distance < bestDistance) {
+          bestDistance = distance;
+          bestBody = body;
+        }
+      }
+      if (!bestBody) {
+        return null;
+      }
+      bestBody.grabIndex = -1;
+      bestBody.centerGrab = true;
+      bestBody.grabTarget = bestBody.clampPoint(point);
+      return bestBody;
+    }
+
+    let bestBody = null;
+    let bestIndex = -1;
+    let bestDistanceSq = 110 * 110;
+    for (const body of bodies) {
+      for (let i = 0; i < body.positions.length; i += 1) {
+        const dx = body.positions[i].x - point.x;
+        const dy = body.positions[i].y - point.y;
+        const distanceSq = dx * dx + dy * dy;
+        if (distanceSq < bestDistanceSq) {
+          bestDistanceSq = distanceSq;
+          bestBody = body;
+          bestIndex = i;
+        }
+      }
+    }
+    if (!bestBody) {
+      return null;
+    }
+    bestBody.centerGrab = false;
+    bestBody.grabIndex = bestIndex;
+    bestBody.grabTarget = bestBody.clampPoint(point);
+    return bestBody;
   }
 
   function onPointerDown(event) {
@@ -419,7 +610,8 @@
     if (!pointInArena(point)) {
       return;
     }
-    if (!sim.grabAt(point)) {
+    activeBody = findGrabBody(point);
+    if (!activeBody) {
       return;
     }
     dragging = true;
@@ -430,10 +622,10 @@
   }
 
   function onPointerMove(event) {
-    if (!dragging || event.pointerId !== activePointer) {
+    if (!dragging || event.pointerId !== activePointer || !activeBody) {
       return;
     }
-    sim.updateGrab(toWorld(event));
+    activeBody.updateGrab(toWorld(event));
     event.preventDefault();
   }
 
@@ -453,7 +645,9 @@
       accumulator += frameDelta;
       let steps = 0;
       while (accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
-        sim.step(FIXED_STEP);
+        for (const body of bodies) {
+          body.step(FIXED_STEP);
+        }
         accumulator -= FIXED_STEP;
         steps += 1;
       }
@@ -467,6 +661,7 @@
       }
     }
 
+    processPendingSpawns();
     draw(now / 1000);
     requestAnimationFrame(frame);
   }
@@ -482,7 +677,9 @@
       drawEquipotentials();
     }
     drawGravitySource(time);
-    drawBody();
+    for (const body of bodies) {
+      drawBody(body);
+    }
     drawHints();
   }
 
@@ -586,16 +783,17 @@
   }
 
   function fieldSignature() {
-    return `${sim.gravity.toFixed(4)}|${sim.centerMu.toFixed(4)}|${sim.centerEpsilon.toFixed(4)}`;
+    return `${values.gravity.toFixed(4)}|${(values.center_mu * 1e6).toFixed(4)}|${CENTER_EPSILON.toFixed(4)}`;
   }
 
   function potentialAt(x, y) {
     const dx = CENTER.x - x;
     const dy = CENTER.y - y;
-    const softened = dx * dx + dy * dy + sim.centerEpsilon * sim.centerEpsilon;
-    let value = -sim.gravity * y;
-    if (sim.centerMu > 0) {
-      value -= sim.centerMu / Math.sqrt(softened);
+    const softened = dx * dx + dy * dy + CENTER_EPSILON * CENTER_EPSILON;
+    let value = -values.gravity * y;
+    const mu = values.center_mu * 1e6;
+    if (mu > 0) {
+      value -= mu / Math.sqrt(softened);
     }
     return value;
   }
@@ -670,7 +868,7 @@
     if (contourCache && contourCache.signature === signature) {
       return contourCache;
     }
-    if (sim.gravity === 0 && sim.centerMu === 0) {
+    if (values.gravity === 0 && values.center_mu === 0) {
       contourCache = { signature, levels: [] };
       return contourCache;
     }
@@ -679,21 +877,21 @@
     const rows = Math.ceil(ARENA.h / CONTOUR_CELL) + 1;
     const dx = ARENA.w / (cols - 1);
     const dy = ARENA.h / (rows - 1);
-    const values = new Float64Array(cols * rows);
+    const gridValues = new Float64Array(cols * rows);
 
     for (let row = 0; row < rows; row += 1) {
       const y = ARENA.y + row * dy;
       for (let col = 0; col < cols; col += 1) {
-        values[col + row * cols] = potentialAt(ARENA.x + col * dx, y);
+        gridValues[col + row * cols] = potentialAt(ARENA.x + col * dx, y);
       }
     }
 
-    const levels = buildLevels(values);
+    const levels = buildLevels(gridValues);
     contourCache = {
       signature,
       levels: levels.map((value) => ({
         value,
-        segments: marchingSegments(values, cols, rows, dx, dy, value),
+        segments: marchingSegments(gridValues, cols, rows, dx, dy, value),
       })),
     };
     return contourCache;
@@ -725,12 +923,12 @@
     ctx.restore();
   }
 
-  function drawBody() {
-    const outline = buildOutline();
+  function drawBody(body) {
+    const outline = buildOutline(body);
     if (outline.length < 3) {
       return;
     }
-    const center = sim.centroid;
+    const center = body.centroid;
 
     drawPolygon(outline.map((p) => ({ x: p.x + 7, y: p.y + 9 })), COLORS.shadow);
 
@@ -750,34 +948,34 @@
     drawStroke(outline, COLORS.bodyRim, 2.2);
 
     if (debugDraw) {
-      drawDebug(center);
+      drawDebug(center, body);
     }
 
-    if (sim.grabIndex >= 0) {
-      const grabbed = sim.positions[sim.grabIndex];
+    if (body === activeBody && (body.grabIndex >= 0 || body.centerGrab)) {
+      const grabbed = body.centerGrab ? body.centroid : body.positions[body.grabIndex];
       ctx.strokeStyle = COLORS.tether;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(grabbed.x, grabbed.y);
-      ctx.lineTo(sim.grabTarget.x, sim.grabTarget.y);
+      ctx.lineTo(body.grabTarget.x, body.grabTarget.y);
       ctx.stroke();
       ctx.fillStyle = COLORS.tether;
       ctx.beginPath();
-      ctx.arc(sim.grabTarget.x, sim.grabTarget.y, 5, 0, Math.PI * 2);
+      ctx.arc(body.grabTarget.x, body.grabTarget.y, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.beginPath();
-      ctx.arc(grabbed.x, grabbed.y, 7, 0, Math.PI * 2);
+      ctx.arc(grabbed.x, grabbed.y, body.centerGrab ? 10 : 7, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
 
-  function drawDebug(center) {
-    const n = sim.positions.length;
+  function drawDebug(center, body) {
+    const n = body.positions.length;
     ctx.lineWidth = 1;
     for (let i = 0; i < n; i += 1) {
-      const p = sim.positions[i];
-      const next = sim.positions[(i + 1) % n];
-      const skip = sim.positions[(i + 2) % n];
+      const p = body.positions[i];
+      const next = body.positions[(i + 1) % n];
+      const skip = body.positions[(i + 2) % n];
       ctx.strokeStyle = "rgba(85, 225, 255, 0.45)";
       line(p, next);
       ctx.strokeStyle = "rgba(245, 180, 90, 0.34)";
@@ -785,7 +983,7 @@
       ctx.strokeStyle = "rgba(245, 140, 215, 0.18)";
       line(p, center);
     }
-    for (const p of sim.positions) {
+    for (const p of body.positions) {
       ctx.fillStyle = "rgba(235, 255, 255, 0.95)";
       ctx.beginPath();
       ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
@@ -797,14 +995,14 @@
     ctx.fill();
   }
 
-  function buildOutline() {
-    const n = sim.positions.length;
+  function buildOutline(body) {
+    const n = body.positions.length;
     const raw = [];
     for (let i = 0; i < n; i += 1) {
-      const p0 = sim.positions[(i - 1 + n) % n];
-      const p1 = sim.positions[i];
-      const p2 = sim.positions[(i + 1) % n];
-      const p3 = sim.positions[(i + 2) % n];
+      const p0 = body.positions[(i - 1 + n) % n];
+      const p1 = body.positions[i];
+      const p2 = body.positions[(i + 1) % n];
+      const p3 = body.positions[(i + 2) % n];
       for (let j = 0; j < 6; j += 1) {
         raw.push(catmullRom(p0, p1, p2, p3, j / 6));
       }
@@ -902,7 +1100,7 @@
   function drawHints() {
     drawText("封闭实验区 · 240 Hz 固定步长", ARENA.x + 24, ARENA.y + ARENA.h - 18, 12, COLORS.textMuted, "left");
     drawText("拖动软体轮廓施加局部力", ARENA.x + ARENA.w - 24, ARENA.y + 30, 12, COLORS.textMuted, "right");
-    if (showEquipotential && (sim.gravity !== 0 || sim.centerMu !== 0)) {
+    if (showEquipotential && (values.gravity !== 0 || values.center_mu !== 0)) {
       const x = ARENA.x + ARENA.w - 150;
       const y = ARENA.y + 52;
       ctx.strokeStyle = CONTOUR_MAJOR;
@@ -915,10 +1113,10 @@
     }
   }
 
+  resetSimulation();
   buildPanel();
   setupCanvas();
   setPaused(false);
-  updateMetrics();
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
@@ -932,6 +1130,9 @@
   pauseButton.addEventListener("click", togglePause);
   resetButton.addEventListener("click", resetSimulation);
   defaultsButton.addEventListener("click", restoreDefaults);
+  addBodyButton.addEventListener("click", requestAddBody);
+  removeBodyButton.addEventListener("click", removeOldestBody);
+  grabModeButton.addEventListener("click", toggleGrabMode);
   debugCheckbox.addEventListener("change", () => {
     debugDraw = debugCheckbox.checked;
   });
@@ -953,7 +1154,6 @@
   });
 
   window.__softBodyDemo = {
-    sim,
     get paused() {
       return paused;
     },
@@ -964,7 +1164,15 @@
     restoreDefaults,
     getDefaults: () => ({ ...defaultValues }),
     getContours: () => getContours(),
+    getBodies: () => bodies.map((body) => ({ radius: body.restRadius, particles: body.positions.length })),
+    getPrimaryBody: () => bodies[0] || null,
+    getPendingSpawns: () => pendingSpawns,
+    addBody: requestAddBody,
+    removeOldest: removeOldestBody,
+    getGrabMode: () => grabMode,
+    setGrabMode,
   };
 
+  setGrabMode("edge");
   requestAnimationFrame(frame);
 }());

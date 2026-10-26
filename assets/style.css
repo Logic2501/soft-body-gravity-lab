@@ -194,6 +194,35 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.body-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.square-button {
+  width: 40px;
+  min-height: 34px;
+  padding: 0;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.body-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+button:disabled:hover {
+  background: rgba(22, 38, 55, 0.9);
+  border-color: rgba(100, 160, 170, 0.3);
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -231,6 +260,12 @@ input:focus-visible,
 
 .wide-button {
   width: 100%;
+}
+
+.mode-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(92, 240, 192, 0.55);
 }
 
 .debug-toggle {

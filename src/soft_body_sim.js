@@ -69,6 +69,7 @@
     setup(arena, center, spawn, radius) {
       this.arena = { ...arena };
       this.center = { ...center };
+      this.spawnCenter = { x: spawn.x, y: spawn.y };
       this.restRadius = radius;
       this.initialPositions = [];
       for (let i = 0; i < SEGMENTS; i += 1) {
@@ -93,12 +94,33 @@
       this.velocities = Array.from({ length: SEGMENTS }, () => ({ x: 0, y: 0 }));
       this.centroid = this.average(this.positions);
       this.grabIndex = -1;
+      this.centerGrab = false;
       this.grabTarget = { x: this.centroid.x, y: this.centroid.y };
       this.lastMaxSpeed = 0;
       this.lastAreaError = 0;
       this.lastContact = false;
       this.lastMaxCenterAccel = 0;
       this.lastInstability = false;
+    }
+
+    setRadius(newRadius) {
+      if (!Number.isFinite(newRadius) || newRadius <= 0 || newRadius === this.restRadius) {
+        return;
+      }
+      const scale = newRadius / this.restRadius;
+      const center = this.centroid;
+      for (let i = 0; i < this.positions.length; i += 1) {
+        this.positions[i].x = center.x + (this.positions[i].x - center.x) * scale;
+        this.positions[i].y = center.y + (this.positions[i].y - center.y) * scale;
+        this.initialPositions[i].x = this.spawnCenter.x + (this.initialPositions[i].x - this.spawnCenter.x) * scale;
+        this.initialPositions[i].y = this.spawnCenter.y + (this.initialPositions[i].y - this.spawnCenter.y) * scale;
+        this.restEdgeLengths[i] *= scale;
+        this.restSkipLengths[i] *= scale;
+      }
+      this.restArea *= scale * scale;
+      this.restRadius = newRadius;
+      this.clampToArena();
+      this.centroid = this.average(this.positions);
     }
 
     step(dt) {
@@ -145,6 +167,7 @@
 
     applyExternalAcceleration(dt) {
       this.lastMaxCenterAccel = 0;
+      const centerGrabAccel = this.centerGrab ? this.centerGrabAcceleration() : null;
       for (let i = 0; i < this.positions.length; i += 1) {
         let ax = 0;
         let ay = this.gravity;
@@ -161,6 +184,10 @@
           const grabAccel = this.grabAcceleration(this.positions[i]);
           ax += grabAccel.x;
           ay += grabAccel.y;
+        }
+        if (centerGrabAccel) {
+          ax += centerGrabAccel.x;
+          ay += centerGrabAccel.y;
         }
         this.velocities[i].x += ax * dt;
         this.velocities[i].y += ay * dt;
@@ -192,6 +219,18 @@
     grabAcceleration(point) {
       let ax = (this.grabTarget.x - point.x) * this.grabStiffness;
       let ay = (this.grabTarget.y - point.y) * this.grabStiffness;
+      const length = Math.hypot(ax, ay);
+      if (length > this.grabMaxAccel) {
+        const scale = this.grabMaxAccel / length;
+        ax *= scale;
+        ay *= scale;
+      }
+      return { x: ax, y: ay };
+    }
+
+    centerGrabAcceleration() {
+      let ax = (this.grabTarget.x - this.centroid.x) * this.grabStiffness;
+      let ay = (this.grabTarget.y - this.centroid.y) * this.grabStiffness;
       const length = Math.hypot(ax, ay);
       if (length > this.grabMaxAccel) {
         const scale = this.grabMaxAccel / length;
@@ -391,7 +430,18 @@
       return { x: x / points.length, y: y / points.length };
     }
 
-    grabAt(point, maxDistance = 110) {
+    grabAt(point, maxDistance = 110, mode = "edge") {
+      if (mode === "center") {
+        const distanceToCenter = Math.hypot(this.centroid.x - point.x, this.centroid.y - point.y);
+        if (distanceToCenter > maxDistance) {
+          return false;
+        }
+        this.grabIndex = -1;
+        this.centerGrab = true;
+        this.grabTarget = this.clampPoint(point);
+        return true;
+      }
+
       let bestIndex = -1;
       let bestDistanceSq = maxDistance * maxDistance;
       for (let i = 0; i < SEGMENTS; i += 1) {
@@ -403,6 +453,7 @@
           bestIndex = i;
         }
       }
+      this.centerGrab = false;
       this.grabIndex = bestIndex;
       if (bestIndex >= 0) {
         this.grabTarget = this.clampPoint(point);
@@ -411,13 +462,14 @@
     }
 
     updateGrab(point) {
-      if (this.grabIndex >= 0) {
+      if (this.grabIndex >= 0 || this.centerGrab) {
         this.grabTarget = this.clampPoint(point);
       }
     }
 
     releaseGrab() {
       this.grabIndex = -1;
+      this.centerGrab = false;
     }
 
     clampPoint(point) {

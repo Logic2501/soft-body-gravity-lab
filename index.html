@@ -25,6 +25,14 @@
       <div id="params" class="params"></div>
       <p id="param-help" class="param-help" aria-live="polite"></p>
 
+      <div class="body-actions">
+        <button id="add-body" class="square-button" type="button" title="添加软体；默认出生点被占用时排队等待" aria-label="添加软体">+</button>
+        <button id="remove-body" class="square-button" type="button" title="删除最早添加的软体" aria-label="删除最早添加的软体">−</button>
+        <span id="body-count" class="body-count">1 个软体</span>
+      </div>
+
+      <button id="grab-mode" class="wide-button mode-button" type="button" title="切换拖拽方式：边缘局部形变 / 中心整体拖动">拖拽点：边缘</button>
+
       <div class="actions">
         <button id="pause" type="button">暂停</button>
         <button id="reset" type="button">重置实验</button>
@@ -45,8 +53,9 @@
       <p id="metrics" class="metrics">最大速度 — · 面积误差 —</p>
 
       <p class="hint">
-        拖动软体轮廓：对最近质点施加有限拖拽力<br>
+        拖动模式：边缘局部形变 / 中心整体拖动<br>
         松开后恢复纯物理模拟<br>
+        + 添加软体 · − 删除最早软体 · 重置回到 1 个<br>
         空格 暂停/继续 · R 重置<br>
         边缘/弯曲/面积调到 0 可深度折叠<br>
         轮廓平滑调到 0 显示原始折痕<br>
