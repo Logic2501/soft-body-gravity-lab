@@ -12,6 +12,7 @@ npm run test:ui    # 只跑浏览器 UI
 
 - UI 测试从 `window.__softBodyDemo.getDefaults()` 读取默认值，不硬编码参数；调整默认参数时不需要改测试。
 - 物理测试使用显式场景参数或不变量断言；稳定长跑放在 `--deep`。
+- `src/body_collisions.js` 的段碰撞由物理测试覆盖：分离、最小边缘距离、不回落穿透。
 - 浏览器测试需要 Chrome；可用 `CHROME_BIN` 指定路径。无截图、无视觉断言。
 - Godot 原生测试已冷归档到 `archive/native-godot-tests/`；只在修改 `native/` 时恢复。
 - 修改物理/UI 后至少跑 `npm test`；改动物理模型、碰撞或约束时再跑 `npm run test:deep`。
