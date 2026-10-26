@@ -1,0 +1,29 @@
+; Engine configuration file.
+; Godot 4 project for the soft-body gravity experiment.
+
+config_version=5
+
+[application]
+
+config/name="Soft Body Gravity Lab"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "GL Compatibility")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=800
+window/size/window_width_override=1280
+window/size/window_height_override=800
+window/stretch/mode="canvas_items"
+
+[physics]
+
+common/physics_ticks_per_second=240
+common/max_physics_steps_per_frame=8
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.03, 0.04, 0.07, 1)

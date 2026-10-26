@@ -1,0 +1,6 @@
+.DS_Store
+.godot/
+.tools/
+.research/
+_site/
+node_modules/
