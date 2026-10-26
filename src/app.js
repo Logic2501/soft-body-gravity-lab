@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function") {
-    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js 与 src/body_collisions.js 存在。</p>";
+  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function" || typeof createBodyPalette !== "function") {
+    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js、src/body_collisions.js 与 src/body_palette.js 存在。</p>";
     return;
   }
 
@@ -70,6 +70,16 @@
       help: "同时缩放所有软体；新增软体也使用这个大小。默认出生点需要足够空间。",
     },
     {
+      key: "edge_particles",
+      label: "边缘质点数",
+      min: 12,
+      max: 32,
+      step: 2,
+      decimals: 0,
+      unit: "",
+      help: "轮廓质点数量，12–32；默认 16。改变后会按当前圆心和大小重建所有软体轮廓，质点越多折痕越细。",
+    },
+    {
       key: "edge_stiffness",
       label: "边缘刚度",
       min: 0,
@@ -130,6 +140,16 @@
       help: "速度衰减率。越高越快停下；越低振荡和回弹持续越久，0 几乎不衰减。",
     },
     {
+      key: "center_grab_damping",
+      label: "中心拖拽阻尼",
+      min: 0,
+      max: 80,
+      step: 1,
+      decimals: 0,
+      unit: "",
+      help: "中心点拖拽的阻尼。越大越稳、越不晃；越小越跟手。默认 20，约半临界阻尼。",
+    },
+    {
       key: "restitution",
       label: "边界恢复",
       min: 0,
@@ -154,7 +174,7 @@
   const PARAM_BY_KEY = Object.fromEntries(PARAMS.map((param) => [param.key, param]));
 
   const templateSim = new SoftBodySim();
-  templateSim.setup(ARENA, CENTER, SPAWN, RADIUS);
+  templateSim.setup(ARENA, CENTER, SPAWN, RADIUS, 16);
 
   const canvas = document.getElementById("scene");
   const ctx = canvas.getContext("2d");
@@ -175,6 +195,8 @@
   const bodies = [];
   const rowElements = {};
   let bodySize = RADIUS;
+  let edgeParticles = 16;
+  let colorIndex = 0;
   let outlineSmoothing = 1.0;
   const values = snapshotParams(templateSim);
   const defaultValues = { ...values };
@@ -198,12 +220,14 @@
       gravity: sourceSim.gravity,
       center_mu: sourceSim.centerMu / 1e6,
       body_size: bodySize,
+      edge_particles: edgeParticles,
       edge_stiffness: sourceSim.edgeStiffness,
       bending_stiffness: sourceSim.bendingStiffness,
       area_strength: sourceSim.areaStrength,
       shape_strength: sourceSim.shapeStrength,
       outline_smoothing: outlineSmoothing,
       damping: sourceSim.damping,
+      center_grab_damping: sourceSim.centerGrabDamping,
       restitution: sourceSim.restitution,
       wall_friction: sourceSim.wallFriction,
     };
@@ -339,6 +363,7 @@
     body.areaStrength = values.area_strength;
     body.shapeStrength = values.shape_strength;
     body.damping = values.damping;
+    body.centerGrabDamping = values.center_grab_damping;
     body.restitution = values.restitution;
     body.wallFriction = values.wall_friction;
   }
@@ -349,7 +374,19 @@
       for (const body of bodies) {
         body.setRadius(bodySize);
       }
+      resolveBodyCollisions(bodies, { margin: 2, iterations: 3, restitution: 0 });
       updateBodyCount();
+      updateMetrics();
+      return;
+    }
+    if (key === "edge_particles") {
+      edgeParticles = displayValue;
+      endDrag();
+      for (const body of bodies) {
+        body.setSegments(edgeParticles);
+      }
+      resolveBodyCollisions(bodies, { margin: 2, iterations: 3, restitution: 0 });
+      updateMetrics();
       return;
     }
     if (key === "outline_smoothing") {
@@ -379,6 +416,9 @@
         case "damping":
           body.damping = displayValue;
           break;
+        case "center_grab_damping":
+          body.centerGrabDamping = displayValue;
+          break;
         case "restitution":
           body.restitution = displayValue;
           break;
@@ -393,7 +433,9 @@
 
   function createBody() {
     const body = new SoftBodySim();
-    body.setup(ARENA, CENTER, SPAWN, bodySize);
+    body.setup(ARENA, CENTER, SPAWN, bodySize, edgeParticles);
+    body.palette = createBodyPalette(colorIndex);
+    colorIndex += 1;
     applyParamsToBody(body);
     return body;
   }
@@ -495,6 +537,7 @@
     endDrag();
     bodies.length = 0;
     pendingSpawns = 0;
+    colorIndex = 0;
     bodies.push(createBody());
     metricsTimer = 0;
     updateBodyCount();
@@ -930,6 +973,12 @@
       return;
     }
     const center = body.centroid;
+    const palette = body.palette || {
+      edge: COLORS.bodyEdge,
+      center: COLORS.bodyCenter,
+      outline: COLORS.bodyOutline,
+      rim: COLORS.bodyRim,
+    };
 
     drawPolygon(outline.map((p) => ({ x: p.x + 7, y: p.y + 9 })), COLORS.shadow);
 
@@ -941,12 +990,12 @@
         x: center.x + (p.x - center.x) * scale,
         y: center.y + (p.y - center.y) * scale,
       }));
-      drawPolygon(points, colorLerp(COLORS.bodyEdge, COLORS.bodyCenter, t));
+      drawPolygon(points, colorLerp(palette.edge, palette.center, t));
     }
 
     ctx.lineJoin = "round";
-    drawStroke(outline, COLORS.bodyOutline, 6);
-    drawStroke(outline, COLORS.bodyRim, 2.2);
+    drawStroke(outline, palette.outline, 6);
+    drawStroke(outline, palette.rim, 2.2);
 
     if (debugDraw) {
       drawDebug(center, body);
@@ -1165,7 +1214,12 @@
     restoreDefaults,
     getDefaults: () => ({ ...defaultValues }),
     getContours: () => getContours(),
-    getBodies: () => bodies.map((body) => ({ radius: body.restRadius, particles: body.positions.length })),
+    getBodies: () => bodies.map((body) => ({
+      radius: body.restRadius,
+      particles: body.positions.length,
+      hue: body.palette ? body.palette.hue : null,
+      centerGrabDamping: body.centerGrabDamping,
+    })),
     getPrimaryBody: () => bodies[0] || null,
     getPendingSpawns: () => pendingSpawns,
     addBody: requestAddBody,

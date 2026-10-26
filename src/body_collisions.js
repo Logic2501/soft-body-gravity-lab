@@ -112,6 +112,22 @@
           vb2.x += nx * impulse;
           vb2.y += ny * impulse;
         }
+
+        const friction = clamp(((bodyA.wallFriction || 0) + (bodyB.wallFriction || 0)) * 0.5, 0, 1);
+        if (friction > 0) {
+          const tx = -ny;
+          const ty = nx;
+          const relativeTangent = (vbx - vax) * tx + (vby - vay) * ty;
+          const frictionImpulse = (relativeTangent * friction) / 2;
+          va1.x += tx * frictionImpulse;
+          va1.y += ty * frictionImpulse;
+          va2.x += tx * frictionImpulse;
+          va2.y += ty * frictionImpulse;
+          vb1.x -= tx * frictionImpulse;
+          vb1.y -= ty * frictionImpulse;
+          vb2.x -= tx * frictionImpulse;
+          vb2.y -= ty * frictionImpulse;
+        }
       }
     }
   }

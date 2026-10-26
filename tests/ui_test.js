@@ -342,22 +342,34 @@ async function main() {
         bodies: demo.getBodies().length,
         pending: demo.getPendingSpawns(),
         count: document.getElementById('body-count').textContent,
+        hue: demo.getBodies()[0] ? demo.getBodies()[0].hue : null,
       };
       const sizeNumber = document.querySelector('[data-key="body_size"] .param-number');
       sizeNumber.value = '90';
       sizeNumber.dispatchEvent(new Event('change', { bubbles: true }));
+      const edgeNumber = document.querySelector('[data-key="edge_particles"] .param-number');
+      edgeNumber.value = '24';
+      edgeNumber.dispatchEvent(new Event('change', { bubbles: true }));
+      const dampingNumber = document.querySelector('[data-key="center_grab_damping"] .param-number');
+      dampingNumber.value = '10';
+      dampingNumber.dispatchEvent(new Event('change', { bubbles: true }));
       return {
         initial,
         queued,
         afterRemove,
         radii: demo.getBodies().map((body) => body.radius),
+        particles: demo.getBodies().map((body) => body.particles),
+        centerDamping: demo.getBodies().map((body) => body.centerGrabDamping),
       };
     })()`);
     expect(bodyLifecycle.initial.bodies === 1, "ui: reset should leave one body");
     expect(bodyLifecycle.queued.bodies === 1 && bodyLifecycle.queued.pending === 1, "ui: occupied spawn should queue a body");
     expect(bodyLifecycle.queued.count.includes("等待 1"), "ui: queued spawn should be visible in the body count");
     expect(bodyLifecycle.afterRemove.bodies === 1 && bodyLifecycle.afterRemove.pending === 0, "ui: removing the oldest body should let the queued body spawn");
+    expect(Math.abs(bodyLifecycle.afterRemove.hue - 174) < 1e-9, "ui: new body colors should follow the fixed hue path");
     expect(bodyLifecycle.radii.length > 0 && bodyLifecycle.radii.every((radius) => Math.abs(radius - 90) < 1e-6), "ui: body size slider should scale every body");
+    expect(bodyLifecycle.particles.length > 0 && bodyLifecycle.particles.every((count) => count === 24), "ui: edge particle count should rebuild every body");
+    expect(bodyLifecycle.centerDamping.length > 0 && bodyLifecycle.centerDamping.every((value) => Math.abs(value - 10) < 1e-9), "ui: center drag damping should apply to every body");
 
     const grabMode = await evaluate(`(() => {
       const demo = window.__softBodyDemo;

@@ -2,6 +2,7 @@
 
 const { SoftBodySim } = require("../src/soft_body_sim.js");
 const { resolveBodyCollisions, bodyCollisionDistance } = require("../src/body_collisions.js");
+const { createBodyPalette, BASE_HUE, HUE_STEP } = require("../src/body_palette.js");
 
 const DT = 1 / 240;
 const ARENA = { x: 24, y: 24, w: 852, h: 732 };
@@ -223,7 +224,7 @@ function testLongStability() {
 
 function testUserDefaults() {
   const sim = new SoftBodySim();
-  sim.setup(ARENA, CENTER, SPAWN, RADIUS);
+  sim.setup(ARENA, CENTER, SPAWN, RADIUS, 16);
   const stats = run(sim, 20);
   console.log(
     `[user defaults 20s] speed=${stats.maxSpeed.toFixed(1)} area_err=${stats.maxAreaError.toFixed(3)} min_area=${stats.minAreaRatio.toFixed(2)} radial_dev=${stats.maxRadialDev.toFixed(3)} edge_strain=${stats.maxEdgeStrain.toFixed(3)} aspect=${stats.maxAspect.toFixed(2)} flips=${stats.orientationFlips}`,
@@ -321,6 +322,55 @@ function testCenterGrab() {
   expect(stats.inside, "center grab: release must not tunnel through walls");
 }
 
+function testSegmentsAndPalette() {
+  const sim = makeSim(0, 0, 0.5);
+  sim.setSegments(16);
+  const before = sim.positions.length;
+  const stats = run(sim, 0.5);
+  const palette0 = createBodyPalette(0);
+  const palette1 = createBodyPalette(1);
+  const paletteWrap = createBodyPalette(20);
+  console.log(`[segments/palette] points=${before}->${sim.positions.length} finite=${stats.finite} hues=${palette0.hue}/${palette1.hue}/${paletteWrap.hue}`);
+  expect(before === 16 && sim.positions.length === 16, "segments: edge count should rebuild every particle array");
+  expect(sim.restEdgeLengths.length === 16 && sim.restSkipLengths.length === 16, "segments: constraints should use the new count");
+  expect(stats.finite && stats.inside, "segments: rebuilt topology should remain stable");
+  expect(Math.abs(palette1.hue - palette0.hue - HUE_STEP) < 1e-9, "palette: hue should advance by a fixed step");
+  expect(Math.abs(paletteWrap.hue - BASE_HUE) < 1e-9, "palette: hue path should wrap through color space");
+  expect(palette0.edge.length === 3 && palette0.center.length === 3, "palette: colors should be valid RGB triples");
+}
+
+function testCollisionFriction() {
+  const makePair = (friction) => {
+    const a = makeSim(0, 0, 0.5);
+    const b = new SoftBodySim();
+    b.setup(ARENA, CENTER, { x: SPAWN.x + 110, y: SPAWN.y }, RADIUS);
+    b.gravity = 0;
+    b.centerMu = 0;
+    b.damping = 0.5;
+    a.wallFriction = friction;
+    b.wallFriction = friction;
+    for (const velocity of b.velocities) {
+      velocity.y = 120;
+    }
+    return { a, b };
+  };
+  const averageY = (body) => {
+    let total = 0;
+    for (const velocity of body.velocities) {
+      total += velocity.y;
+    }
+    return total / body.velocities.length;
+  };
+  const noFriction = makePair(0);
+  const withFriction = makePair(0.8);
+  resolveBodyCollisions([noFriction.a, noFriction.b], { margin: 2, iterations: 1, restitution: 0 });
+  resolveBodyCollisions([withFriction.a, withFriction.b], { margin: 2, iterations: 1, restitution: 0 });
+  const slidingNoFriction = averageY(noFriction.b);
+  const slidingWithFriction = averageY(withFriction.b);
+  console.log(`[collision friction] tangential_speed=${slidingNoFriction.toFixed(1)}->${slidingWithFriction.toFixed(1)}`);
+  expect(slidingWithFriction < slidingNoFriction - 5, "collision friction: body-body contact should use wall friction");
+}
+
 function testBodyCollisions() {
   const a = makeSim(0, 0, 0.5);
   const b = new SoftBodySim();
@@ -383,6 +433,8 @@ if (DEEP) {
 testLocalGrab();
 testCenterGrab();
 testBodyCollisions();
+testCollisionFriction();
+testSegmentsAndPalette();
 
 if (failures.length === 0) {
   console.log("RESULT: PASS — all numerical checks passed");

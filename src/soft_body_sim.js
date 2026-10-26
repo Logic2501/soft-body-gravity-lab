@@ -29,10 +29,10 @@
     constructor() {
       this.segments = SEGMENTS;
       this.solverIterations = 6;
-      this.bendingStiffness = 0.01;
+      this.bendingStiffness = 0.04;
       this.grabStiffness = 400;
       this.grabMaxAccel = 22000;
-      this.centerGrabDamping = 40;
+      this.centerGrabDamping = 20;
       this.maxCenterAccel = 9000;
       this.wallEpsilon = 0.01;
       this.settleSpeed = 24;
@@ -65,16 +65,18 @@
       this.maxSpeed = DEFAULT_MAX_SPEED;
       this.grabStiffness = 400;
       this.grabMaxAccel = 22000;
+      this.centerGrabDamping = 20;
     }
 
-    setup(arena, center, spawn, radius) {
+    setup(arena, center, spawn, radius, segmentCount = SEGMENTS) {
       this.arena = { ...arena };
       this.center = { ...center };
       this.spawnCenter = { x: spawn.x, y: spawn.y };
       this.restRadius = radius;
+      this.segments = Math.max(8, Math.round(segmentCount));
       this.initialPositions = [];
-      for (let i = 0; i < SEGMENTS; i += 1) {
-        const angle = (Math.PI * 2 * i) / SEGMENTS;
+      for (let i = 0; i < this.segments; i += 1) {
+        const angle = (Math.PI * 2 * i) / this.segments;
         this.initialPositions.push({
           x: spawn.x + Math.cos(angle) * radius,
           y: spawn.y + Math.sin(angle) * radius,
@@ -82,9 +84,9 @@
       }
       this.restEdgeLengths = [];
       this.restSkipLengths = [];
-      for (let i = 0; i < SEGMENTS; i += 1) {
-        this.restEdgeLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 1) % SEGMENTS]));
-        this.restSkipLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 2) % SEGMENTS]));
+      for (let i = 0; i < this.segments; i += 1) {
+        this.restEdgeLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 1) % this.segments]));
+        this.restSkipLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 2) % this.segments]));
       }
       this.restArea = this.signedArea(this.initialPositions);
       this.reset();
@@ -92,7 +94,7 @@
 
     reset() {
       this.positions = this.initialPositions.map((p) => ({ x: p.x, y: p.y }));
-      this.velocities = Array.from({ length: SEGMENTS }, () => ({ x: 0, y: 0 }));
+      this.velocities = Array.from({ length: this.segments }, () => ({ x: 0, y: 0 }));
       this.centroid = this.average(this.positions);
       this.grabIndex = -1;
       this.centerGrab = false;
@@ -122,6 +124,52 @@
       this.restRadius = newRadius;
       this.clampToArena();
       this.centroid = this.average(this.positions);
+    }
+
+    setSegments(segmentCount) {
+      const count = Math.max(8, Math.round(segmentCount));
+      if (count === this.segments) {
+        return;
+      }
+      const center = { x: this.centroid.x, y: this.centroid.y };
+      let vx = 0;
+      let vy = 0;
+      for (const velocity of this.velocities) {
+        vx += velocity.x;
+        vy += velocity.y;
+      }
+      vx /= Math.max(this.velocities.length, 1);
+      vy /= Math.max(this.velocities.length, 1);
+
+      this.segments = count;
+      this.initialPositions = [];
+      this.positions = [];
+      for (let i = 0; i < count; i += 1) {
+        const angle = (Math.PI * 2 * i) / count;
+        this.initialPositions.push({
+          x: this.spawnCenter.x + Math.cos(angle) * this.restRadius,
+          y: this.spawnCenter.y + Math.sin(angle) * this.restRadius,
+        });
+        this.positions.push({
+          x: center.x + Math.cos(angle) * this.restRadius,
+          y: center.y + Math.sin(angle) * this.restRadius,
+        });
+      }
+      this.restEdgeLengths = [];
+      this.restSkipLengths = [];
+      for (let i = 0; i < count; i += 1) {
+        this.restEdgeLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 1) % count]));
+        this.restSkipLengths.push(distance(this.initialPositions[i], this.initialPositions[(i + 2) % count]));
+      }
+      this.restArea = this.signedArea(this.initialPositions);
+      this.velocities = Array.from({ length: count }, () => ({ x: vx, y: vy }));
+      this.grabIndex = -1;
+      this.centerGrab = false;
+      this.grabTarget = { x: center.x, y: center.y };
+      this.centroid = center;
+      this.clampToArena();
+      this.centroid = this.average(this.positions);
+      this.updateMetrics();
     }
 
     step(dt) {
@@ -251,10 +299,10 @@
     }
 
     solveDistanceConstraints() {
-      for (let i = 0; i < SEGMENTS; i += 1) {
-        const next = (i + 1) % SEGMENTS;
+      for (let i = 0; i < this.segments; i += 1) {
+        const next = (i + 1) % this.segments;
         this.solveDistance(i, next, this.restEdgeLengths[i], this.edgeStiffness);
-        const skip = (i + 2) % SEGMENTS;
+        const skip = (i + 2) % this.segments;
         this.solveDistance(i, skip, this.restSkipLengths[i], this.bendingStiffness);
       }
     }
@@ -285,11 +333,11 @@
       }
       const area = this.signedArea(this.positions);
       const error = area - this.restArea;
-      const gradients = new Array(SEGMENTS);
+      const gradients = new Array(this.segments);
       let gradientSum = 0;
-      for (let i = 0; i < SEGMENTS; i += 1) {
-        const prev = this.positions[(i - 1 + SEGMENTS) % SEGMENTS];
-        const next = this.positions[(i + 1) % SEGMENTS];
+      for (let i = 0; i < this.segments; i += 1) {
+        const prev = this.positions[(i - 1 + this.segments) % this.segments];
+        const next = this.positions[(i + 1) % this.segments];
         const gradient = {
           x: 0.5 * (next.y - prev.y),
           y: 0.5 * (prev.x - next.x),
@@ -301,7 +349,7 @@
         return;
       }
       const factor = (-error / gradientSum) * clamp(this.areaStrength, 0, 1);
-      for (let i = 0; i < SEGMENTS; i += 1) {
+      for (let i = 0; i < this.segments; i += 1) {
         this.positions[i].x += gradients[i].x * factor;
         this.positions[i].y += gradients[i].y * factor;
       }
@@ -313,7 +361,7 @@
       }
       const center = this.average(this.positions);
       const strength = clamp(this.shapeStrength, 0, 1);
-      for (let i = 0; i < SEGMENTS; i += 1) {
+      for (let i = 0; i < this.segments; i += 1) {
         const offsetX = this.positions[i].x - center.x;
         const offsetY = this.positions[i].y - center.y;
         const currentDistance = Math.hypot(offsetX, offsetY);
@@ -331,7 +379,7 @@
       const minY = this.arena.y;
       const maxX = this.arena.x + this.arena.w;
       const maxY = this.arena.y + this.arena.h;
-      for (let i = 0; i < SEGMENTS; i += 1) {
+      for (let i = 0; i < this.segments; i += 1) {
         this.positions[i].x = clamp(this.positions[i].x, minX, maxX);
         this.positions[i].y = clamp(this.positions[i].y, minY, maxY);
       }
@@ -345,7 +393,7 @@
       const maxY = this.arena.y + this.arena.h;
       const tangentKeep = 1 - clamp(this.wallFriction, 0, 1);
 
-      for (let i = 0; i < SEGMENTS; i += 1) {
+      for (let i = 0; i < this.segments; i += 1) {
         const p = this.positions[i];
         const v = this.velocities[i];
         let touched = false;
@@ -454,7 +502,7 @@
 
       let bestIndex = -1;
       let bestDistanceSq = maxDistance * maxDistance;
-      for (let i = 0; i < SEGMENTS; i += 1) {
+      for (let i = 0; i < this.segments; i += 1) {
         const dx = this.positions[i].x - point.x;
         const dy = this.positions[i].y - point.y;
         const distanceSq = dx * dx + dy * dy;
