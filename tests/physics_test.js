@@ -1,6 +1,7 @@
 "use strict";
 
 const { SoftBodySim } = require("../src/soft_body_sim.js");
+const { resolveBodyCollisions, bodyCollisionDistance } = require("../src/body_collisions.js");
 
 const DT = 1 / 240;
 const ARENA = { x: 24, y: 24, w: 852, h: 732 };
@@ -297,19 +298,55 @@ function testCenterGrab() {
     return;
   }
   const start = { x: sim.centroid.x, y: sim.centroid.y };
-  sim.updateGrab({ x: SPAWN.x + 140, y: SPAWN.y - 60 });
+  const target = { x: SPAWN.x + 140, y: SPAWN.y - 60 };
+  sim.updateGrab(target);
   for (let i = 0; i < Math.round(0.4 / DT); i += 1) {
     sim.step(DT);
   }
   const travelled = Math.hypot(sim.centroid.x - start.x, sim.centroid.y - start.y);
   const heldSpeed = Math.hypot(sim.velocities[0].x, sim.velocities[0].y);
+  for (let i = 0; i < Math.round(1.0 / DT); i += 1) {
+    sim.step(DT);
+  }
+  const settleDistance = Math.hypot(sim.centroid.x - target.x, sim.centroid.y - target.y);
+  const settleSpeed = Math.hypot(sim.velocities[0].x, sim.velocities[0].y);
   sim.releaseGrab();
   const stats = run(sim, 1.0);
-  console.log(`[center grab] travelled=${travelled.toFixed(1)} held_speed=${heldSpeed.toFixed(1)} area_err=${stats.maxAreaError.toFixed(3)}`);
+  console.log(`[center grab] travelled=${travelled.toFixed(1)} held_speed=${heldSpeed.toFixed(1)} settle_d=${settleDistance.toFixed(1)} settle_speed=${settleSpeed.toFixed(1)} area_err=${stats.maxAreaError.toFixed(3)}`);
   expect(travelled > 30, "center grab: body centroid should move");
   expect(heldSpeed <= sim.maxSpeed + 0.5, "center grab: drag force must respect speed cap");
+  expect(settleDistance < 20, "center grab: body should settle near the target");
+  expect(settleSpeed < 80, "center grab: damping should suppress high-speed oscillation");
   expect(stats.finite, "center grab: release should remain stable");
   expect(stats.inside, "center grab: release must not tunnel through walls");
+}
+
+function testBodyCollisions() {
+  const a = makeSim(0, 0, 0.5);
+  const b = new SoftBodySim();
+  b.setup(ARENA, CENTER, { x: SPAWN.x + 110, y: SPAWN.y }, RADIUS);
+  b.gravity = 0;
+  b.centerMu = 0;
+  b.damping = 0.5;
+  const before = Math.hypot(a.centroid.x - b.centroid.x, a.centroid.y - b.centroid.y);
+  const initialMin = bodyCollisionDistance(a, b);
+  for (let i = 0; i < Math.round(1.5 / DT); i += 1) {
+    a.step(DT);
+    b.step(DT);
+    resolveBodyCollisions([a, b], { margin: 2, iterations: 3 });
+  }
+  const after = Math.hypot(a.centroid.x - b.centroid.x, a.centroid.y - b.centroid.y);
+  const afterMin = bodyCollisionDistance(a, b);
+  for (let i = 0; i < Math.round(0.5 / DT); i += 1) {
+    a.step(DT);
+    b.step(DT);
+    resolveBodyCollisions([a, b], { margin: 2, iterations: 3 });
+  }
+  const restMin = bodyCollisionDistance(a, b);
+  console.log(`[collisions] center=${before.toFixed(1)}->${after.toFixed(1)} edge_min=${initialMin.toFixed(2)}->${afterMin.toFixed(2)} rest_min=${restMin.toFixed(2)}`);
+  expect(after > before + 5, "collisions: overlapping bodies should separate");
+  expect(afterMin > 0.5, "collisions: edges must not remain interpenetrating");
+  expect(restMin > 0.5, "collisions: bodies must not sink back into each other");
 }
 
 function testExtremeParameters() {
@@ -345,6 +382,7 @@ if (DEEP) {
 }
 testLocalGrab();
 testCenterGrab();
+testBodyCollisions();
 
 if (failures.length === 0) {
   console.log("RESULT: PASS — all numerical checks passed");

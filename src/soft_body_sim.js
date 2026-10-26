@@ -32,6 +32,7 @@
       this.bendingStiffness = 0.01;
       this.grabStiffness = 400;
       this.grabMaxAccel = 22000;
+      this.centerGrabDamping = 40;
       this.maxCenterAccel = 9000;
       this.wallEpsilon = 0.01;
       this.settleSpeed = 24;
@@ -229,8 +230,17 @@
     }
 
     centerGrabAcceleration() {
-      let ax = (this.grabTarget.x - this.centroid.x) * this.grabStiffness;
-      let ay = (this.grabTarget.y - this.centroid.y) * this.grabStiffness;
+      let vx = 0;
+      let vy = 0;
+      for (const velocity of this.velocities) {
+        vx += velocity.x;
+        vy += velocity.y;
+      }
+      vx /= Math.max(this.velocities.length, 1);
+      vy /= Math.max(this.velocities.length, 1);
+
+      let ax = (this.grabTarget.x - this.centroid.x) * this.grabStiffness - vx * this.centerGrabDamping;
+      let ay = (this.grabTarget.y - this.centroid.y) * this.grabStiffness - vy * this.centerGrabDamping;
       const length = Math.hypot(ax, ay);
       if (length > this.grabMaxAccel) {
         const scale = this.grabMaxAccel / length;

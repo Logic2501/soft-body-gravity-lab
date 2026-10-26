@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  if (typeof SoftBodySim === "undefined") {
-    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js 存在。</p>";
+  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function") {
+    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js 与 src/body_collisions.js 存在。</p>";
     return;
   }
 
@@ -648,6 +648,7 @@
         for (const body of bodies) {
           body.step(FIXED_STEP);
         }
+        resolveBodyCollisions(bodies, { margin: 2, iterations: 3, restitution: 0 });
         accumulator -= FIXED_STEP;
         steps += 1;
       }
