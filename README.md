@@ -6,9 +6,11 @@
 
 实验分支：大量 8 质点小水滴在重力、封闭边界和左右两个水龙头之间流动；靠近自动合并，形变超过临界值自动分离。
 
-- 分支：`feat/merge-split-water`（本地实验分支，未合并、未推送）
+- 分支：`feat/merge-split-water`（已推送远端，未合并）
 - 仓库：https://github.com/Logic2501/soft-body-gravity-lab
-- Pages：`main` 仍部署原实验；本分支未部署
+- Pages 入口：https://logic2501.github.io/soft-body-gravity-lab/
+- 原型：https://logic2501.github.io/soft-body-gravity-lab/prototype/
+- 水流版：https://logic2501.github.io/soft-body-gravity-lab/water/
 
 主交付仍是**纯静态 Web 单页**：无后端、无构建步骤、无运行时依赖。双击 `index.html` 即可运行。`native/` 保留同源 Godot 4 版本作为可选实现，本分支未同步。
 
@@ -35,17 +37,15 @@
 
 ## GitHub Pages
 
-仓库内已提供 `.github/workflows/pages.yml`，推送 `main` 后可自动构建并部署静态页面。
+Pages 只有一个站点，根路径是极简入口：
 
-首次使用时在 GitHub 仓库设置中：
+- `/`：选择“原型”或“水流版”
+- `/prototype/`：`main` 分支的原型
+- `/water/`：`feat/merge-split-water` 分支的水流版
 
-1. Settings → Pages → Source 选择 **GitHub Actions**；
-2. 推到 `main`，等待 Actions 完成；
-3. 访问 Actions 输出的 Pages URL。
+`main` 上的 `.github/workflows/pages.yml` 会在同一次构建中分别 checkout 两个分支，组合成上述目录后通过 GitHub Actions 部署。推送 `main` 或手动运行 workflow 会更新整个站点；水流分支需要重新部署时，从 `main` 手动触发 workflow。
 
-也可以不用 Actions：Settings → Pages → Deploy from a branch，选择 `main` 和根目录 `/`。
-
-当前仓库已推送到 `main`，Pages 使用 GitHub Actions 部署。若 Fork 后复用，需在自己的仓库 Settings → Pages 中选择 GitHub Actions。
+本分支本身不直接作为 Pages environment 的部署 ref；这样避免 `github-pages` 环境保护规则拦截。
 
 ## 操作
 

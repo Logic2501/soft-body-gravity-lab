@@ -12,8 +12,9 @@
 - 本分支关闭中心引力，只保留向下重力；等势能线按 `Φ = −g·y` 绘制，10 px 网格 marching squares，参数变化时重算缓存。
 - `native/` 为可选早期 Godot 4 版本，不参与 Web 部署。
 - 仓库：https://github.com/Logic2501/soft-body-gravity-lab
-- Pages：https://logic2501.github.io/soft-body-gravity-lab/
-- `main` 与线上 Pages 保持原实验；本分支未合并、未推送、未部署。
+- Pages 入口：https://logic2501.github.io/soft-body-gravity-lab/
+- 原型：`/prototype/`；水流版：`/water/`
+- 本分支已推送，未合并；由 `main` 的 Pages workflow 同次 checkout 两个分支构建。
 
 ## 启动
 
@@ -76,4 +77,4 @@ npm run test:water  # 只跑合并/分裂/软水滴稳定性
 - 由用户在浏览器中确认水龙头弧线、A/D/方向键、擦除手感、软水手感、合并速度和大水滴形态。
 - 确认边缘拖拽分裂、斜抛弧线、固定浅蓝和更细边框的视觉效果。
 - 若需要更真实的拓扑合并/分裂或自碰撞，再单独评估；当前为面积守恒的近似。
-- 本分支保持本地，不推送；确认后再决定是否合并/部署。
+- 本分支已推送；修改后从 `main` 手动触发 Pages workflow 更新 `/water/`，不直接以分支 ref 部署。

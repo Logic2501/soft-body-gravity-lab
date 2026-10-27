@@ -33,7 +33,7 @@
 | F11 | 水滴发射/删除：`+` 从水龙头发射、`−` 删除最早 | ✅ | `src/app.js` | 发射使用中心拖拽；上限 32；删除从最早开始 |
 | F12 | 新水滴大小滑块 | ✅ | `src/app.js` | 范围 10–60，默认 22；只影响之后发射的水滴，不缩放已有/合并体 |
 | F13 | 重置语义：恢复 6 滴初始水 | ✅ | `src/app.js` | 清空合并/分离计数；保留参数、大小和自动水龙头开关 |
-| F14 | GitHub Pages 自动部署 | ✅ | `.github/workflows/pages.yml` | 推送 `main` 后部署；线上页面可访问 |
+| F14 | GitHub Pages 单站多版本 | ✅ | `.github/workflows/pages.yml`、`pages/index.html` | 根入口选择；“原型” `/prototype/` 与“水流版” `/water/`；从 main 构建两个分支 |
 | F15 | 可选 Godot 4 原生版本 | ✅ | `native/` | 不参与 Web 部署；测试已冷归档 |
 | F16 | 分层测试：快速回归 / deep / Chrome UI | ✅ | `tests/`、`package.json` | `npm test` 快速；`npm run test:deep` 跑长时/极端场景 |
 | F17 | 冷归档 Godot 测试 | ✅ | `archive/native-godot-tests/` | 不参与 npm；修改 native 时按 README 恢复 |
@@ -96,6 +96,13 @@
 - 水滴年龄 `>= 0.8 s`。
 - `mergeCooldown <= 0`（合并后 0.55 s 内不分裂）。
 - 满足后按主轴分成两个面积相等的子水滴；子体质点数约为父体 `1/√2`，最低 8。
+
+### 2026-10-27 Pages 单站多版本
+
+- 根路径改为极简入口，提供“原型”和“水流版”两个链接；水流版入口带高亮 `NEW` 角标。
+- Pages 构建从 `main` 取原型、从 `feat/merge-split-water` 取水流版，分别放入 `/prototype/` 和 `/water/`。
+- 不再从 feature branch 直接部署，避免 `github-pages` environment 的分支保护规则拦截。
+- 水流分支后续改动通过 `main` 的 `workflow_dispatch` 重新构建整个站点。
 
 ## 本地 Git 找回流程
 
