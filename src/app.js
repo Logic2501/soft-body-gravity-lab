@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function" || typeof createBodyPalette !== "function" || typeof mergeSoftBodies !== "function" || typeof splitSoftBody !== "function" || typeof shouldSplitBody !== "function") {
+  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function" || typeof createWaterPalette !== "function" || typeof mergeSoftBodies !== "function" || typeof splitSoftBody !== "function" || typeof shouldSplitBody !== "function") {
     document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js、src/body_collisions.js、src/body_palette.js 与 src/body_merge_split.js 存在。</p>";
     return;
   }
@@ -65,7 +65,7 @@
       step: 1,
       decimals: 0,
       unit: "px",
-      help: "同时缩放所有水滴；新水滴也使用这个大小。默认 22 px。",
+      help: "只影响之后发射的新水滴；已有和合并后的水滴不会被缩放。默认 22 px。",
     },
     {
       key: "edge_particles",
@@ -81,11 +81,11 @@
       key: "edge_stiffness",
       label: "边缘刚度",
       min: 0,
-      max: 1,
-      step: 0.01,
-      decimals: 2,
+      max: 0.03,
+      step: 0.001,
+      decimals: 3,
       unit: "",
-      help: "轮廓相邻质点的距离约束。越高越像有弹性的果冻；越低越容易拉伸、挤压和折叠，0 会失去边缘支撑。",
+      help: "轮廓相邻质点的距离约束。水流版缩小到 0–0.03，默认 0.010；越低越容易拉伸、挤压和分裂。",
     },
     {
       key: "bending_stiffness",
@@ -101,11 +101,11 @@
       key: "area_strength",
       label: "面积保持",
       min: 0,
-      max: 0.05,
-      step: 0.001,
-      decimals: 3,
+      max: 0.01,
+      step: 0.0001,
+      decimals: 4,
       unit: "",
-      help: "维持轮廓总面积。范围 0–0.05，步进 0.001；0 完全不约束，0.001 起就会持续恢复，因此适合在这里细调。",
+      help: "维持轮廓总面积。水流版缩小到 0–0.01，步进 0.0001；0 完全不约束。数值很小但仍是双精度浮点，不会因四位小数产生物理精度问题。",
     },
     {
       key: "shape_strength",
@@ -175,13 +175,15 @@
   templateSim.setup(ARENA, CENTER, CENTER, RADIUS, EDGE_PARTICLES);
   templateSim.gravity = 500;
   templateSim.centerMu = 0;
-  templateSim.edgeStiffness = 0.02;
+  templateSim.edgeStiffness = 0.01;
   templateSim.bendingStiffness = 0;
   templateSim.areaStrength = 0.001;
   templateSim.shapeStrength = 0;
   templateSim.damping = 0.18;
   templateSim.restitution = 0.02;
   templateSim.wallFriction = 0.01;
+
+  const WATER_PALETTE = createWaterPalette();
 
   const canvas = document.getElementById("scene");
   const ctx = canvas.getContext("2d");
@@ -205,7 +207,6 @@
   const rowElements = {};
   let bodySize = RADIUS;
   let edgeParticles = EDGE_PARTICLES;
-  let colorIndex = 0;
   let outlineSmoothing = 1.0;
   let mergeCount = 0;
   let splitCount = 0;
@@ -389,12 +390,6 @@
   function applyParameterToSim(key, displayValue) {
     if (key === "body_size") {
       bodySize = displayValue;
-      for (const body of bodies) {
-        body.setRadius(bodySize);
-      }
-      resolveBodyCollisions(bodies, { margin: 2, iterations: 3, restitution: 0 });
-      updateBodyCount();
-      updateMetrics();
       return;
     }
     if (key === "edge_particles") {
@@ -449,8 +444,7 @@
   function createBodyAt(spawn, options = {}) {
     const body = new SoftBodySim();
     body.setup(ARENA, CENTER, spawn, bodySize, edgeParticles);
-    body.palette = createBodyPalette(colorIndex);
-    colorIndex += 1;
+    body.palette = WATER_PALETTE;
     applyParamsToBody(body);
     body.waterAge = 0;
     body.mergeCooldown = Number.isFinite(options.mergeCooldown) ? options.mergeCooldown : 0;
@@ -499,8 +493,8 @@
     const body = createBodyAt(spawn, { mergeCooldown: 0.25 });
     body.launchRemaining = LAUNCH_HOLD;
     body.launchTarget = {
-      x: CENTER.x + emitter.direction * 28,
-      y: ARENA.y + ARENA.h - 110,
+      x: emitter.x + emitter.direction * 100,
+      y: ARENA.y + ARENA.h - 300,
     };
     body.grabIndex = -1;
     body.centerGrab = true;
@@ -792,7 +786,6 @@
     endDrag();
     stopEmitterHolds();
     bodies.length = 0;
-    colorIndex = 0;
     mergeCount = 0;
     splitCount = 0;
     emitCount = 0;
@@ -1261,10 +1254,10 @@
 
     drawPolygon(outline.map((p) => ({ x: p.x + 7, y: p.y + 9 })), COLORS.shadow);
 
-    const bands = 10;
+    const bands = 6;
     for (let band = 0; band < bands; band += 1) {
       const t = band / (bands - 1);
-      const scale = 1 - 0.3 * t;
+      const scale = 1 - 0.12 * t;
       const points = outline.map((p) => ({
         x: center.x + (p.x - center.x) * scale,
         y: center.y + (p.y - center.y) * scale,
@@ -1273,8 +1266,8 @@
     }
 
     ctx.lineJoin = "round";
-    drawStroke(outline, palette.outline, 6);
-    drawStroke(outline, palette.rim, 2.2);
+    drawStroke(outline, palette.outline, 2.5);
+    drawStroke(outline, palette.rim, 1.1);
 
     if (debugDraw) {
       drawDebug(center, body);

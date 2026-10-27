@@ -32,6 +32,8 @@
     "maxSpeed",
     "grabStiffness",
     "grabMaxAccel",
+    "edgeGrabStiffness",
+    "edgeGrabMaxAccel",
     "centerGrabDamping",
   ];
 
@@ -103,10 +105,11 @@
       x: (velocityA.x * areaA + velocityB.x * areaB) / totalArea,
       y: (velocityA.y * areaA + velocityB.y * areaB) / totalArea,
     };
-    const segments = Math.min(
-      Number.isFinite(options.maxSegments) ? options.maxSegments : 24,
-      Math.max(bodyA.segments || bodyA.positions.length, bodyB.segments || bodyB.positions.length),
-    );
+    const maxSegments = Number.isFinite(options.maxSegments) ? options.maxSegments : 24;
+    const segmentsA = bodyA.segments || bodyA.positions.length;
+    const segmentsB = bodyB.segments || bodyB.positions.length;
+    const density = (segmentsA / Math.sqrt(areaA) + segmentsB / Math.sqrt(areaB)) * 0.5;
+    const segments = Math.min(maxSegments, Math.max(8, Math.ceil(density * Math.sqrt(totalArea))));
     const radius = radiusForPolygonArea(totalArea, segments);
 
     const merged = buildBody(bodyA, center, radius, segments, velocity);
@@ -173,7 +176,8 @@
       return null;
     }
     const area = bodyArea(body);
-    const segments = Math.max(8, body.segments || body.positions.length);
+    const parentSegments = Math.max(8, body.segments || body.positions.length);
+    const segments = Math.min(24, Math.max(8, Math.round(parentSegments / Math.SQRT2)));
     const childRadius = radiusForPolygonArea(area / 2, segments);
     if (!Number.isFinite(childRadius) || childRadius <= 0) {
       return null;

@@ -2,7 +2,7 @@
 
 const { SoftBodySim } = require("../src/soft_body_sim.js");
 const { resolveBodyCollisions, bodyCollisionDistance } = require("../src/body_collisions.js");
-const { createBodyPalette, BASE_HUE, HUE_STEP } = require("../src/body_palette.js");
+const { createWaterPalette, WATER_HUE } = require("../src/body_palette.js");
 
 const DT = 1 / 240;
 const ARENA = { x: 24, y: 24, w: 852, h: 732 };
@@ -285,7 +285,7 @@ function testLocalGrab() {
   console.log(
     `[grab] travelled=${travelled.toFixed(1)} held_speed=${heldSpeed.toFixed(1)} post-release speed=${stats.maxSpeed.toFixed(1)} area_err=${stats.maxAreaError.toFixed(3)}`,
   );
-  expect(travelled > 30, "grab: dragged point should move");
+  expect(travelled > 150, "grab: edge drag should move the grabbed area clearly");
   expect(heldSpeed <= sim.maxSpeed + 0.5, "grab: drag force must respect speed cap");
   expect(stats.finite, "grab: release should remain stable");
   expect(stats.inside, "grab: release must not tunnel through walls");
@@ -327,15 +327,13 @@ function testSegmentsAndPalette() {
   sim.setSegments(16);
   const before = sim.positions.length;
   const stats = run(sim, 0.5);
-  const palette0 = createBodyPalette(0);
-  const palette1 = createBodyPalette(1);
-  const paletteWrap = createBodyPalette(20);
-  console.log(`[segments/palette] points=${before}->${sim.positions.length} finite=${stats.finite} hues=${palette0.hue}/${palette1.hue}/${paletteWrap.hue}`);
+  const palette0 = createWaterPalette();
+  const palette1 = createWaterPalette();
+  console.log(`[segments/palette] points=${before}->${sim.positions.length} finite=${stats.finite} hue=${palette0.hue}`);
   expect(before === 16 && sim.positions.length === 16, "segments: edge count should rebuild every particle array");
   expect(sim.restEdgeLengths.length === 16 && sim.restSkipLengths.length === 16, "segments: constraints should use the new count");
   expect(stats.finite && stats.inside, "segments: rebuilt topology should remain stable");
-  expect(Math.abs(palette1.hue - palette0.hue - HUE_STEP) < 1e-9, "palette: hue should advance by a fixed step");
-  expect(Math.abs(paletteWrap.hue - BASE_HUE) < 1e-9, "palette: hue path should wrap through color space");
+  expect(palette0.hue === WATER_HUE && palette1.hue === WATER_HUE, "palette: water drops should use one fixed hue");
   expect(palette0.edge.length === 3 && palette0.center.length === 3, "palette: colors should be valid RGB triples");
 }
 

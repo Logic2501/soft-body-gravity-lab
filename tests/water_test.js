@@ -83,7 +83,8 @@ function testMerge() {
   console.log(
     `[water merge] radius=${merged.restRadius.toFixed(1)} particles=${merged.positions.length} area=${areaAfter.toFixed(1)}/${areaBefore.toFixed(1)} centroid=(${merged.centroid.x.toFixed(1)},${merged.centroid.y.toFixed(1)}) vx=${merged.velocities[0].x.toFixed(1)}`,
   );
-  expect(merged.positions.length === 8, "water merge: merged body should keep the low particle count");
+  expect(merged.positions.length === 12, "water merge: merged body should gain edge particles");
+  expect(merged.restEdgeLengths.length === 12, "water merge: merged constraints should use the new count");
   expect(Math.abs(areaAfter - areaBefore) / areaBefore < 1e-9, "water merge: area must be conserved");
   expect(Math.abs(merged.velocities[0].x - 10) < 1e-6, "water merge: velocity should be area-weighted");
   expect(Math.abs(merged.centroid.x - 310) < 1e-6, "water merge: centroid should be area-weighted");

@@ -32,6 +32,8 @@
       this.bendingStiffness = 0.04;
       this.grabStiffness = 400;
       this.grabMaxAccel = 22000;
+      this.edgeGrabStiffness = 800;
+      this.edgeGrabMaxAccel = 50000;
       this.centerGrabDamping = 20;
       this.maxCenterAccel = 9000;
       this.wallEpsilon = 0.01;
@@ -65,6 +67,8 @@
       this.maxSpeed = DEFAULT_MAX_SPEED;
       this.grabStiffness = 400;
       this.grabMaxAccel = 22000;
+      this.edgeGrabStiffness = 800;
+      this.edgeGrabMaxAccel = 50000;
       this.centerGrabDamping = 20;
     }
 
@@ -217,6 +221,9 @@
     applyExternalAcceleration(dt) {
       this.lastMaxCenterAccel = 0;
       const centerGrabAccel = this.centerGrab ? this.centerGrabAcceleration() : null;
+      const edgeGrabAccel = this.grabIndex >= 0
+        ? this.edgeGrabAcceleration(this.positions[this.grabIndex])
+        : null;
       for (let i = 0; i < this.positions.length; i += 1) {
         let ax = 0;
         let ay = this.gravity;
@@ -229,10 +236,12 @@
             Math.hypot(centerAccel.x, centerAccel.y),
           );
         }
-        if (i === this.grabIndex) {
-          const grabAccel = this.grabAcceleration(this.positions[i]);
-          ax += grabAccel.x;
-          ay += grabAccel.y;
+        if (edgeGrabAccel) {
+          const weight = this.edgeGrabWeight(i);
+          if (weight > 0) {
+            ax += edgeGrabAccel.x * weight;
+            ay += edgeGrabAccel.y * weight;
+          }
         }
         if (centerGrabAccel) {
           ax += centerGrabAccel.x;
@@ -265,16 +274,37 @@
       return { x: ax, y: ay };
     }
 
-    grabAcceleration(point) {
-      let ax = (this.grabTarget.x - point.x) * this.grabStiffness;
-      let ay = (this.grabTarget.y - point.y) * this.grabStiffness;
+    edgeGrabAcceleration(point) {
+      let ax = (this.grabTarget.x - point.x) * this.edgeGrabStiffness;
+      let ay = (this.grabTarget.y - point.y) * this.edgeGrabStiffness;
       const length = Math.hypot(ax, ay);
-      if (length > this.grabMaxAccel) {
-        const scale = this.grabMaxAccel / length;
+      if (length > this.edgeGrabMaxAccel) {
+        const scale = this.edgeGrabMaxAccel / length;
         ax *= scale;
         ay *= scale;
       }
       return { x: ax, y: ay };
+    }
+
+    edgeGrabWeight(index) {
+      if (this.grabIndex < 0 || this.segments === 0) {
+        return 0;
+      }
+      let distance = Math.abs(index - this.grabIndex);
+      distance = Math.min(distance, this.segments - distance);
+      if (distance === 0) {
+        return 1;
+      }
+      if (distance === 1) {
+        return 0.65;
+      }
+      if (distance === 2) {
+        return 0.35;
+      }
+      if (distance === 3) {
+        return 0.15;
+      }
+      return 0;
     }
 
     centerGrabAcceleration() {

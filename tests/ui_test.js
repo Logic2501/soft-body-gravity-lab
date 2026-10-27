@@ -202,6 +202,20 @@ async function main() {
     console.log(`[water mouse hold] emits ${beforeMouse} -> ${afterMouse}`);
     expect(afterMouse - beforeMouse >= 2, "ui: holding a faucet with the mouse should emit repeatedly");
 
+    const launch = await evaluate(`(async () => {
+      const demo = window.__softBodyDemo;
+      demo.setAutoEmit(false);
+      demo.reset();
+      demo.emitNow();
+      const before = demo.getBodies().at(-1);
+      const start = { x: before.x, y: before.y };
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      const after = demo.getBodies().at(-1);
+      return { start, after: { x: after.x, y: after.y } };
+    })()`);
+    console.log(`[water launch] y ${launch.start.y.toFixed(1)} -> ${launch.after.y.toFixed(1)}`);
+    expect(launch.after.y < launch.start.y - 20, "ui: faucet launch should move diagonally upward");
+
     const erase = await evaluate(`(() => {
       const demo = window.__softBodyDemo;
       demo.setAutoEmit(false);
@@ -246,21 +260,28 @@ async function main() {
     const fineRanges = await evaluate(`(() => {
       const area = document.getElementById('area_strength-range');
       const shape = document.getElementById('shape_strength-range');
+      const edge = document.getElementById('edge_stiffness-range');
       return {
         areaMax: Number(area.max),
         areaStep: Number(area.step),
         shapeMax: Number(shape.max),
         shapeStep: Number(shape.step),
+        edgeMax: Number(edge.max),
+        edgeStep: Number(edge.step),
         areaText: document.querySelector('[data-key="area_strength"] .param-number').value,
         shapeText: document.querySelector('[data-key="shape_strength"] .param-number').value,
+        edgeText: document.querySelector('[data-key="edge_stiffness"] .param-number').value,
       };
     })()`);
-    expect(Math.abs(fineRanges.areaMax - 0.05) < 1e-9, "ui: area strength should use the 0–0.05 fine range");
+    expect(Math.abs(fineRanges.areaMax - 0.01) < 1e-9, "ui: area strength should use the 0–0.01 fine range");
     expect(Math.abs(fineRanges.shapeMax - 0.01) < 1e-9, "ui: shape strength should use the 0–0.01 fine range");
-    expect(Math.abs(fineRanges.areaStep - 0.001) < 1e-9, "ui: area strength should step by 0.001");
+    expect(Math.abs(fineRanges.edgeMax - 0.03) < 1e-9, "ui: edge stiffness should use the 0–0.03 fine range");
+    expect(Math.abs(fineRanges.areaStep - 0.0001) < 1e-9, "ui: area strength should step by 0.0001");
     expect(Math.abs(fineRanges.shapeStep - 0.001) < 1e-9, "ui: shape strength should step by 0.001");
-    expect(Math.abs(Number(fineRanges.areaText) - defaults.area_strength) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.areaText), "ui: area strength should display three decimals");
+    expect(Math.abs(fineRanges.edgeStep - 0.001) < 1e-9, "ui: edge stiffness should step by 0.001");
+    expect(Math.abs(Number(fineRanges.areaText) - defaults.area_strength) < 1e-9 && /^\d+\.\d{4}$/.test(fineRanges.areaText), "ui: area strength should display four decimals");
     expect(Math.abs(Number(fineRanges.shapeText) - defaults.shape_strength) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.shapeText), "ui: shape strength should display three decimals");
+    expect(Math.abs(Number(fineRanges.edgeText) - defaults.edge_stiffness) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.edgeText), "ui: edge stiffness should display three decimals");
 
     const canvasSize = await evaluate("(() => { const c = document.getElementById('scene'); return { w: c.width, h: c.height }; })()");
     expect(canvasSize.w > 0 && canvasSize.h > 0, "ui: canvas should have a non-zero backing size");
@@ -437,9 +458,13 @@ async function main() {
         count: document.getElementById('body-count').textContent,
         hue: demo.getBodies()[0] ? demo.getBodies()[0].hue : null,
       };
+      const sizeBefore = demo.getBodies().map((body) => body.radius);
       const sizeNumber = document.querySelector('[data-key="body_size"] .param-number');
       sizeNumber.value = '40';
       sizeNumber.dispatchEvent(new Event('change', { bubbles: true }));
+      const sizeAfter = demo.getBodies().map((body) => body.radius);
+      demo.emitNow();
+      const newRadius = demo.getBodies().at(-1).radius;
       const edgeNumber = document.querySelector('[data-key="edge_particles"] .param-number');
       edgeNumber.value = '24';
       edgeNumber.dispatchEvent(new Event('change', { bubbles: true }));
@@ -450,6 +475,10 @@ async function main() {
         initial,
         afterAdd,
         afterRemove,
+        sizeBefore,
+        sizeAfter,
+        newRadius,
+        hues: demo.getBodies().map((body) => body.hue),
         radii: demo.getBodies().map((body) => body.radius),
         particles: demo.getBodies().map((body) => body.particles),
         centerDamping: demo.getBodies().map((body) => body.centerGrabDamping),
@@ -459,8 +488,12 @@ async function main() {
     expect(bodyLifecycle.initial.count.includes("6 / 32"), "ui: reset count should show the drop cap");
     expect(bodyLifecycle.afterAdd.bodies === 7, "ui: faucet button should emit one drop");
     expect(bodyLifecycle.afterRemove.bodies === 6, "ui: removing the oldest drop should keep the pool size");
-    expect(Math.abs(bodyLifecycle.afterRemove.hue - 174) < 1e-9, "ui: new body colors should follow the fixed hue path");
-    expect(bodyLifecycle.radii.length > 0 && bodyLifecycle.radii.every((radius) => Math.abs(radius - 40) < 1e-6), "ui: body size slider should scale every drop");
+    expect(Math.abs(bodyLifecycle.afterRemove.hue - 198) < 1e-9, "ui: water drops should use the fixed light-blue hue");
+    expect(bodyLifecycle.hues.length > 0 && bodyLifecycle.hues.every((hue) => Math.abs(hue - 198) < 1e-9), "ui: all water drops should share one hue");
+    expect(bodyLifecycle.sizeBefore.every((radius) => Math.abs(radius - 22) < 1e-6), "ui: existing drops should start at the original size");
+    expect(bodyLifecycle.sizeAfter.every((radius) => Math.abs(radius - 22) < 1e-6), "ui: body size should not rescale existing drops");
+    expect(Math.abs(bodyLifecycle.newRadius - 40) < 1e-6, "ui: body size should apply to newly emitted drops");
+    expect(bodyLifecycle.radii.filter((radius) => Math.abs(radius - 40) < 1e-6).length === 1, "ui: only the new drop should use the new size");
     expect(bodyLifecycle.particles.length > 0 && bodyLifecycle.particles.every((count) => count === 24), "ui: edge particle count should rebuild every drop");
     expect(bodyLifecycle.centerDamping.length > 0 && bodyLifecycle.centerDamping.every((value) => Math.abs(value - 10) < 1e-9), "ui: center drag damping should apply to every drop");
 

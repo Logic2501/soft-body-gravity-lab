@@ -2,13 +2,27 @@
   if (typeof module === "object" && module.exports) {
     module.exports = factory();
   } else {
-    root.createBodyPalette = factory().createBodyPalette;
+    const api = factory();
+    root.createBodyPalette = api.createBodyPalette;
+    root.createWaterPalette = api.createWaterPalette;
+    root.WATER_HUE = api.WATER_HUE;
   }
 }(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
   const BASE_HUE = 156;
   const HUE_STEP = 18;
+  const WATER_HUE = 198;
+
+  function createWaterPalette() {
+    return {
+      hue: WATER_HUE,
+      edge: hslToRgb(WATER_HUE, 0.55, 0.52),
+      center: hslToRgb(WATER_HUE, 0.68, 0.80),
+      outline: `hsla(${WATER_HUE}, 62%, 28%, 0.92)`,
+      rim: `hsla(${WATER_HUE}, 90%, 82%, 0.90)`,
+    };
+  }
 
   function createBodyPalette(index) {
     const hue = (BASE_HUE + index * HUE_STEP) % 360;
@@ -55,5 +69,5 @@
     ];
   }
 
-  return { createBodyPalette, BASE_HUE, HUE_STEP };
+  return { createBodyPalette, createWaterPalette, BASE_HUE, HUE_STEP, WATER_HUE };
 }));
