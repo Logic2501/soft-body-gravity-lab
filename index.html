@@ -32,6 +32,7 @@
       </div>
 
       <button id="grab-mode" class="wide-button mode-button" type="button" title="切换拖拽方式：边缘局部形变 / 中心整体拖动">拖拽点：中心</button>
+      <button id="erase-mode" class="wide-button mode-button" type="button" title="激活后点按或拖拽删除水滴" aria-pressed="false">擦除模式：关</button>
 
       <div class="actions">
         <button id="pause" type="button">暂停</button>
@@ -45,8 +46,8 @@
       </label>
 
       <label class="debug-toggle">
-        <input id="equipotential" type="checkbox" checked>
-        <span>显示等势能线</span>
+        <input id="equipotential" type="checkbox">
+        <span>显示等势能线（默认关）</span>
       </label>
 
       <label class="debug-toggle">
@@ -59,6 +60,9 @@
 
       <p class="hint">
         拖动模式：边缘局部形变 / 中心整体拖动<br>
+        A / ← 左水龙头，D / → 右水龙头（长按连发）<br>
+        点击或长按左右水龙头也可发射<br>
+        擦除模式：点按或拖拽删除水滴<br>
         水滴靠近自动合并，拉伸超过临界值自动分离<br>
         + 从水龙头发射 · − 删除最早水滴 · 重置回到 6 滴<br>
         空格 暂停/继续 · R 重置<br>

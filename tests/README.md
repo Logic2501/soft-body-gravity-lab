@@ -15,7 +15,7 @@ npm run test:ui    # 只跑浏览器 UI
 - 物理测试使用显式场景参数或不变量断言；稳定长跑放在 `--deep`。
 - `src/body_collisions.js` 的段碰撞由物理测试覆盖：分离、最小边缘距离、不回落穿透、切向摩擦。
 - `src/body_merge_split.js` 由 `tests/water_test.js` 覆盖：面积/动量守恒、8 质点重连、PCA 临界分裂。
-- 质点数重建与色相序列由物理测试覆盖；UI 测试覆盖对应滑块、每体色相、水龙头和自动水流合并/强制分裂。
+- 质点数重建与色相序列由物理测试覆盖；UI 测试覆盖对应滑块、每体色相、水龙头键盘/鼠标连发、擦除和自动水流合并/强制分裂。
 - 浏览器测试需要 Chrome；可用 `CHROME_BIN` 指定路径。无截图、无视觉断言。
 - UI 测试会启动无头 Chrome 调试端口；不要同时并行跑多个 `ui_test.js`。
 - Godot 原生测试已冷归档到 `archive/native-godot-tests/`；只在修改 `native/` 时恢复。

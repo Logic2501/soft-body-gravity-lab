@@ -78,6 +78,10 @@ canvas.grabbing {
   cursor: grabbing;
 }
 
+canvas.erasing {
+  cursor: cell;
+}
+
 .panel {
   display: flex;
   flex-direction: column;

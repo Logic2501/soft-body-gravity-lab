@@ -144,6 +144,80 @@ async function main() {
     })()`);
     expect(autoToggle.on === true && autoToggle.off === false, "ui: auto faucet checkbox should drive the emitter state");
 
+    const keyEmit = await evaluate(`(() => {
+      const demo = window.__softBodyDemo;
+      demo.setAutoEmit(false);
+      demo.reset();
+      if (document.activeElement) {
+        document.activeElement.blur();
+      }
+      const before = demo.getWaterStats().emitCount;
+      const keys = ['a', 'd', 'ArrowLeft', 'ArrowRight'];
+      for (const key of keys) {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+      }
+      return { before, after: demo.getWaterStats().emitCount };
+    })()`);
+    console.log(`[water keys] emits ${keyEmit.before} -> ${keyEmit.after}`);
+    expect(keyEmit.after - keyEmit.before === 4, "ui: A/D and arrow keys should emit from both faucets");
+
+    const keyHold = await evaluate(`(async () => {
+      const demo = window.__softBodyDemo;
+      demo.setAutoEmit(false);
+      demo.reset();
+      if (document.activeElement) {
+        document.activeElement.blur();
+      }
+      const before = demo.getWaterStats().emitCount;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+      return { before, after: demo.getWaterStats().emitCount };
+    })()`);
+    console.log(`[water key hold] emits ${keyHold.before} -> ${keyHold.after}`);
+    expect(keyHold.after - keyHold.before >= 2, "ui: holding a faucet key should emit repeatedly");
+
+    await send("Emulation.setDeviceMetricsOverride", {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await sleep(120);
+    const mousePoint = await evaluate(`(() => {
+      const canvas = document.getElementById('scene').getBoundingClientRect();
+      const emitter = window.__softBodyDemo.getEmitters()[0];
+      return {
+        x: canvas.left + (emitter.x / 900) * canvas.width,
+        y: canvas.top + ((emitter.y - 30) / 780) * canvas.height,
+      };
+    })()`);
+    await evaluate("window.__softBodyDemo.setAutoEmit(false); window.__softBodyDemo.reset();");
+    const beforeMouse = await evaluate("window.__softBodyDemo.getWaterStats().emitCount");
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", x: mousePoint.x, y: mousePoint.y, button: "left", clickCount: 1 });
+    await sleep(500);
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", x: mousePoint.x, y: mousePoint.y, button: "left", clickCount: 1 });
+    const afterMouse = await evaluate("window.__softBodyDemo.getWaterStats().emitCount");
+    console.log(`[water mouse hold] emits ${beforeMouse} -> ${afterMouse}`);
+    expect(afterMouse - beforeMouse >= 2, "ui: holding a faucet with the mouse should emit repeatedly");
+
+    const erase = await evaluate(`(() => {
+      const demo = window.__softBodyDemo;
+      demo.setAutoEmit(false);
+      demo.reset();
+      const body = demo.getBodies()[0];
+      demo.setEraseMode(true);
+      const active = document.getElementById('erase-mode').classList.contains('active');
+      const removed = demo.eraseAt({ x: body.x, y: body.y });
+      const after = demo.getBodies().length;
+      demo.setEraseMode(false);
+      return { active, removed, after, mode: demo.getEraseMode() };
+    })()`);
+    console.log(`[water erase] removed=${erase.removed} remaining=${erase.after}`);
+    expect(erase.active === true && erase.removed === 1 && erase.after === 5, "ui: erase mode should delete the clicked droplet");
+    expect(erase.mode === false, "ui: erase mode should toggle off");
+
     const defaults = await evaluate("window.__softBodyDemo.getDefaults()");
     const paramKeys = Object.keys(defaults);
     expect(paramKeys.length > 0, "ui: defaults should expose parameter keys");
@@ -292,7 +366,7 @@ async function main() {
 
     await evaluate("window.__softBodyDemo.setParam('gravity', 250);");
     const equipotentialDefault = await evaluate("document.getElementById('equipotential').checked");
-    expect(equipotentialDefault === true, "ui: equipotential lines should be enabled by default");
+    expect(equipotentialDefault === false, "ui: equipotential lines should be disabled by default");
     const contourStats = await evaluate(`(() => {
       const contours = window.__softBodyDemo.getContours();
       return {
@@ -336,11 +410,11 @@ async function main() {
     const equipotentialToggle = await evaluate(`(() => {
       const checkbox = document.getElementById('equipotential');
       checkbox.click();
-      const off = checkbox.checked;
+      const on = checkbox.checked;
       checkbox.click();
-      return { off, on: checkbox.checked };
+      return { on, off: checkbox.checked };
     })()`);
-    expect(equipotentialToggle.off === false && equipotentialToggle.on === true, "ui: equipotential checkbox should toggle");
+    expect(equipotentialToggle.on === true && equipotentialToggle.off === false, "ui: equipotential checkbox should toggle");
 
     const bodyLifecycle = await evaluate(`(() => {
       const demo = window.__softBodyDemo;

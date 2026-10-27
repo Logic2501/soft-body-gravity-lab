@@ -19,6 +19,7 @@
   const METRICS_INTERVAL = 0.25;
   const WATER_CHECK_INTERVAL = 1 / 60;
   const EMITTER_INTERVAL = 1.0;
+  const MANUAL_EMIT_INTERVAL = 0.22;
   const LAUNCH_HOLD = 0.34;
   const CONTOUR_CELL = 10;
   const CONTOUR_COLOR = "rgba(108, 224, 214, 0.26)";
@@ -192,6 +193,7 @@
   const removeBodyButton = document.getElementById("remove-body");
   const bodyCountEl = document.getElementById("body-count");
   const grabModeButton = document.getElementById("grab-mode");
+  const eraseModeButton = document.getElementById("erase-mode");
   const debugCheckbox = document.getElementById("debug");
   const equipotentialCheckbox = document.getElementById("equipotential");
   const autoEmitCheckbox = document.getElementById("auto-emit");
@@ -207,10 +209,14 @@
   let outlineSmoothing = 1.0;
   let mergeCount = 0;
   let splitCount = 0;
+  let emitCount = 0;
   let nextEmitterIndex = 0;
   let waterCheckTimer = 0;
   let autoEmit = autoEmitCheckbox ? autoEmitCheckbox.checked : true;
   let emitterTimers = EMITTERS.map((_, index) => 0.35 + index * 0.45);
+  const manualEmitterTimers = EMITTERS.map(() => MANUAL_EMIT_INTERVAL);
+  const keyEmitterHeld = EMITTERS.map(() => false);
+  let pointerEmitter = -1;
   const values = snapshotParams(templateSim);
   const defaultValues = { ...values };
 
@@ -220,8 +226,9 @@
   let activePointer = null;
   let activeBody = null;
   let grabMode = "edge";
+  let eraseMode = false;
   let debugDraw = false;
-  let showEquipotential = true;
+  let showEquipotential = false;
   let contourCache = null;
   let lastFrameTime = performance.now();
   let accumulator = 0;
@@ -501,6 +508,7 @@
     body.centerGrabDamping = Math.max(body.centerGrabDamping, 50);
     body.grabMaxAccel = 1800;
     bodies.push(body);
+    emitCount += 1;
     updateBodyCount();
     updateMetrics();
     return true;
@@ -512,6 +520,66 @@
       nextEmitterIndex = (nextEmitterIndex + 1) % EMITTERS.length;
     }
     return emitted;
+  }
+
+  function isEmitterHeld(index) {
+    return keyEmitterHeld[index] || pointerEmitter === index;
+  }
+
+  function startEmitterHold(index, source) {
+    const wasHeld = isEmitterHeld(index);
+    if (source === "pointer") {
+      pointerEmitter = index;
+    } else {
+      keyEmitterHeld[index] = true;
+    }
+    if (wasHeld) {
+      return;
+    }
+    manualEmitterTimers[index] = MANUAL_EMIT_INTERVAL;
+    spawnFromEmitter(index);
+  }
+
+  function releaseEmitterHold(index, source) {
+    if (source === "pointer") {
+      if (pointerEmitter === index) {
+        pointerEmitter = -1;
+      }
+    } else {
+      keyEmitterHeld[index] = false;
+    }
+  }
+
+  function stopEmitterHolds() {
+    for (let i = 0; i < keyEmitterHeld.length; i += 1) {
+      keyEmitterHeld[i] = false;
+    }
+    pointerEmitter = -1;
+  }
+
+  function updateManualEmitters(dt) {
+    for (let i = 0; i < EMITTERS.length; i += 1) {
+      if (!isEmitterHeld(i)) {
+        continue;
+      }
+      manualEmitterTimers[i] -= dt;
+      if (manualEmitterTimers[i] > 0) {
+        continue;
+      }
+      manualEmitterTimers[i] += MANUAL_EMIT_INTERVAL;
+      spawnFromEmitter(i);
+    }
+  }
+
+  function emitterAt(point) {
+    const bottom = ARENA.y + ARENA.h;
+    for (let i = 0; i < EMITTERS.length; i += 1) {
+      const emitter = EMITTERS[i];
+      if (Math.abs(point.x - emitter.x) <= 38 && point.y >= bottom - 96 && point.y <= bottom) {
+        return i;
+      }
+    }
+    return -1;
   }
 
   function updateEmitters(dt) {
@@ -652,6 +720,7 @@
 
   function setGrabMode(mode) {
     grabMode = mode === "center" ? "center" : "edge";
+    setEraseMode(false);
     endDrag();
     grabModeButton.textContent = grabMode === "center" ? "拖拽点：中心" : "拖拽点：边缘";
     grabModeButton.classList.toggle("active", grabMode === "center");
@@ -660,6 +729,56 @@
 
   function toggleGrabMode() {
     setGrabMode(grabMode === "edge" ? "center" : "edge");
+  }
+
+  function setEraseMode(enabled) {
+    eraseMode = Boolean(enabled);
+    endDrag();
+    if (eraseModeButton) {
+      eraseModeButton.textContent = eraseMode ? "擦除模式：开" : "擦除模式：关";
+      eraseModeButton.classList.toggle("active", eraseMode);
+      eraseModeButton.setAttribute("aria-pressed", String(eraseMode));
+    }
+    canvas.classList.toggle("erasing", eraseMode);
+  }
+
+  function toggleEraseMode() {
+    setEraseMode(!eraseMode);
+  }
+
+  function pointInPolygon(points, point) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i, i += 1) {
+      const a = points[i];
+      const b = points[j];
+      if ((a.y > point.y) !== (b.y > point.y)
+        && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  function eraseAt(point) {
+    let removed = 0;
+    for (let i = bodies.length - 1; i >= 0; i -= 1) {
+      const body = bodies[i];
+      const nearCenter = Math.hypot(body.centroid.x - point.x, body.centroid.y - point.y)
+        <= Math.max(body.restRadius * 0.75, 10);
+      if (!nearCenter && !pointInPolygon(body.positions, point)) {
+        continue;
+      }
+      if (activeBody === body) {
+        endDrag();
+      }
+      bodies.splice(i, 1);
+      removed += 1;
+    }
+    if (removed > 0) {
+      updateBodyCount();
+      updateMetrics();
+    }
+    return removed;
   }
 
   function setAutoEmit(enabled) {
@@ -671,10 +790,12 @@
 
   function resetSimulation() {
     endDrag();
+    stopEmitterHolds();
     bodies.length = 0;
     colorIndex = 0;
     mergeCount = 0;
     splitCount = 0;
+    emitCount = 0;
     nextEmitterIndex = 0;
     waterCheckTimer = 0;
     emitterTimers = EMITTERS.map((_, index) => 0.35 + index * 0.45);
@@ -735,6 +856,7 @@
   }
 
   function endDrag() {
+    pointerEmitter = -1;
     if (activeBody) {
       activeBody.releaseGrab();
     }
@@ -793,11 +915,31 @@
   }
 
   function onPointerDown(event) {
-    if (paused || event.button !== 0) {
+    if (event.button !== 0) {
       return;
     }
     const point = toWorld(event);
     if (!pointInArena(point)) {
+      return;
+    }
+    const emitterIndex = emitterAt(point);
+    if (emitterIndex >= 0) {
+      startEmitterHold(emitterIndex, "pointer");
+      dragging = true;
+      activePointer = event.pointerId;
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    if (eraseMode) {
+      dragging = true;
+      activePointer = event.pointerId;
+      eraseAt(point);
+      canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    if (paused) {
       return;
     }
     activeBody = findGrabBody(point);
@@ -812,7 +954,19 @@
   }
 
   function onPointerMove(event) {
-    if (!dragging || event.pointerId !== activePointer || !activeBody) {
+    if (!dragging || event.pointerId !== activePointer) {
+      return;
+    }
+    if (pointerEmitter >= 0) {
+      event.preventDefault();
+      return;
+    }
+    if (eraseMode) {
+      eraseAt(toWorld(event));
+      event.preventDefault();
+      return;
+    }
+    if (!activeBody) {
       return;
     }
     activeBody.updateGrab(toWorld(event));
@@ -836,6 +990,7 @@
       let steps = 0;
       while (accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
         updateLaunchers(FIXED_STEP);
+        updateManualEmitters(FIXED_STEP);
         updateEmitters(FIXED_STEP);
         updateWater(FIXED_STEP);
         for (const body of bodies) {
@@ -1307,6 +1462,9 @@
   addBodyButton.addEventListener("click", requestAddBody);
   removeBodyButton.addEventListener("click", removeOldestBody);
   grabModeButton.addEventListener("click", toggleGrabMode);
+  if (eraseModeButton) {
+    eraseModeButton.addEventListener("click", toggleEraseMode);
+  }
   debugCheckbox.addEventListener("change", () => {
     debugDraw = debugCheckbox.checked;
   });
@@ -1320,15 +1478,49 @@
   }
 
   window.addEventListener("keydown", (event) => {
-    const tag = document.activeElement && document.activeElement.tagName;
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON") {
+    const active = document.activeElement;
+    const tag = active && active.tagName;
+    const typing = tag === "TEXTAREA" || (tag === "INPUT" && active.type !== "checkbox");
+    if (typing || event.metaKey || event.ctrlKey || event.altKey) {
       return;
     }
+    const key = event.key.toLowerCase();
     if (event.code === "Space") {
+      if (tag === "BUTTON" || (tag === "INPUT" && active.type === "checkbox")) {
+        return;
+      }
       event.preventDefault();
-      togglePause();
-    } else if (event.key === "r" || event.key === "R") {
-      resetSimulation();
+      if (!event.repeat) {
+        togglePause();
+      }
+    } else if (key === "r") {
+      if (!event.repeat) {
+        resetSimulation();
+      }
+    } else if (key === "a" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      startEmitterHold(0, "key");
+    } else if (key === "d" || event.key === "ArrowRight") {
+      event.preventDefault();
+      startEmitterHold(1, "key");
+    }
+  });
+
+  window.addEventListener("keyup", (event) => {
+    if (event.key.toLowerCase() === "a" || event.key === "ArrowLeft") {
+      releaseEmitterHold(0, "key");
+    } else if (event.key.toLowerCase() === "d" || event.key === "ArrowRight") {
+      releaseEmitterHold(1, "key");
+    }
+  });
+
+  window.addEventListener("blur", () => {
+    stopEmitterHolds();
+    endDrag();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stopEmitterHolds();
     }
   });
 
@@ -1361,6 +1553,9 @@
     removeOldest: removeOldestBody,
     getGrabMode: () => grabMode,
     setGrabMode,
+    getEraseMode: () => eraseMode,
+    setEraseMode,
+    eraseAt,
     getEmitters: () => EMITTERS.map((emitter) => ({ ...emitter })),
     isAutoEmit: () => autoEmit,
     setAutoEmit,
@@ -1371,6 +1566,7 @@
       initialDrops: INITIAL_DROPS,
       mergeCount,
       splitCount,
+      emitCount,
       autoEmit,
     }),
   };
