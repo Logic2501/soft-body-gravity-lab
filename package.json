@@ -2,11 +2,12 @@
   "name": "soft-body-gravity-lab",
   "version": "1.0.0",
   "private": true,
-  "description": "Static 2D soft-body gravity experiment for browsers and GitHub Pages.",
+  "description": "Static 2D soft-body water merge/split experiment for browsers and GitHub Pages.",
   "scripts": {
-    "test": "node tests/physics_test.js && node tests/ui_test.js",
+    "test": "node tests/physics_test.js && node tests/water_test.js && node tests/ui_test.js",
     "test:ui": "node tests/ui_test.js",
-    "test:deep": "node tests/physics_test.js --deep && node tests/ui_test.js",
+    "test:water": "node tests/water_test.js",
+    "test:deep": "node tests/physics_test.js --deep && node tests/water_test.js && node tests/ui_test.js",
     "serve": "python3 -m http.server 8000"
   }
 }

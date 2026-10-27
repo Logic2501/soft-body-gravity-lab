@@ -15,7 +15,7 @@ const DEEP = process.argv.includes("--deep");
 
 function makeSim(gravity = 900, centerMu = 90e6, damping = 0.4) {
   const sim = new SoftBodySim();
-  sim.setup(ARENA, CENTER, SPAWN, RADIUS);
+  sim.setup(ARENA, CENTER, SPAWN, RADIUS, 32);
   sim.gravity = gravity;
   sim.centerMu = centerMu;
   sim.damping = damping;
@@ -150,7 +150,7 @@ function testCenterOnly() {
 
 function testCenterNearSingularity() {
   const sim = new SoftBodySim();
-  sim.setup(ARENA, CENTER, CENTER, RADIUS);
+  sim.setup(ARENA, CENTER, CENTER, RADIUS, 32);
   sim.gravity = 0;
   sim.centerMu = 250e6;
   const stats = run(sim, 6);
@@ -343,7 +343,7 @@ function testCollisionFriction() {
   const makePair = (friction) => {
     const a = makeSim(0, 0, 0.5);
     const b = new SoftBodySim();
-    b.setup(ARENA, CENTER, { x: SPAWN.x + 110, y: SPAWN.y }, RADIUS);
+    b.setup(ARENA, CENTER, { x: SPAWN.x + 110, y: SPAWN.y }, RADIUS, 32);
     b.gravity = 0;
     b.centerMu = 0;
     b.damping = 0.5;

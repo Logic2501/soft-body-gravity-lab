@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function" || typeof createBodyPalette !== "function") {
-    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js、src/body_collisions.js 与 src/body_palette.js 存在。</p>";
+  if (typeof SoftBodySim === "undefined" || typeof resolveBodyCollisions !== "function" || typeof createBodyPalette !== "function" || typeof mergeSoftBodies !== "function" || typeof splitSoftBody !== "function" || typeof shouldSplitBody !== "function") {
+    document.body.innerHTML = "<p style='font-family:sans-serif;color:#fff;padding:24px'>物理模块加载失败：请确认 src/soft_body_sim.js、src/body_collisions.js、src/body_palette.js 与 src/body_merge_split.js 存在。</p>";
     return;
   }
 
@@ -10,24 +10,29 @@
   const WORLD_H = 780;
   const ARENA = { x: 24, y: 24, w: 852, h: 732 };
   const CENTER = { x: ARENA.x + ARENA.w / 2, y: ARENA.y + ARENA.h / 2 };
-  const SPAWN = { x: 220, y: 190 };
-  const RADIUS = 62;
+  const RADIUS = 22;
+  const EDGE_PARTICLES = 8;
+  const INITIAL_DROPS = 6;
+  const MAX_BODIES = 32;
   const FIXED_STEP = 1 / 240;
   const MAX_STEPS_PER_FRAME = 24;
   const METRICS_INTERVAL = 0.25;
-  const CENTER_EPSILON = 70;
+  const WATER_CHECK_INTERVAL = 1 / 60;
+  const EMITTER_INTERVAL = 1.0;
+  const LAUNCH_HOLD = 0.34;
   const CONTOUR_CELL = 10;
   const CONTOUR_COLOR = "rgba(108, 224, 214, 0.26)";
   const CONTOUR_MAJOR = "rgba(140, 244, 226, 0.40)";
+  const EMITTERS = [
+    { x: ARENA.x + 64, y: ARENA.y + ARENA.h - 18, direction: 1, label: "左水龙头" },
+    { x: ARENA.x + ARENA.w - 64, y: ARENA.y + ARENA.h - 18, direction: -1, label: "右水龙头" },
+  ];
 
   const COLORS = {
     background: "#070b14",
     arena: "#101a2b",
     grid: "rgba(66, 110, 140, 0.22)",
     border: "#5cf0c0",
-    ghost: "rgba(120, 220, 205, 0.30)",
-    source: "#f5c451",
-    sourceGlow: "rgba(245, 196, 81, 0.22)",
     text: "rgba(220, 238, 240, 0.88)",
     textMuted: "rgba(180, 208, 214, 0.58)",
     bodyEdge: [46, 174, 134],
@@ -36,6 +41,8 @@
     bodyRim: "rgba(168, 255, 232, 0.95)",
     shadow: "rgba(0, 0, 0, 0.22)",
     tether: "#ffd166",
+    faucet: "#68d8e8",
+    faucetGlow: "rgba(104, 216, 232, 0.28)",
   };
 
   const PARAMS = [
@@ -50,34 +57,24 @@
       help: "全局向下加速度。越大下落和撞墙越猛；调到 0 可单独观察中心引力。",
     },
     {
-      key: "center_mu",
-      label: "中心引力 μ",
-      min: 0,
-      max: 250,
-      step: 1,
-      decimals: 0,
-      unit: "×10⁶",
-      help: "指向画面中心引力源的强度。越大越快被吸向中心；近距离会自动软化，不会无限加速。",
-    },
-    {
       key: "body_size",
       label: "软体大小",
-      min: 30,
-      max: 120,
+      min: 10,
+      max: 60,
       step: 1,
       decimals: 0,
       unit: "px",
-      help: "同时缩放所有软体；新增软体也使用这个大小。默认出生点需要足够空间。",
+      help: "同时缩放所有水滴；新水滴也使用这个大小。默认 22 px。",
     },
     {
       key: "edge_particles",
       label: "边缘质点数",
-      min: 12,
-      max: 32,
+      min: 8,
+      max: 24,
       step: 2,
       decimals: 0,
       unit: "",
-      help: "轮廓质点数量，12–32；默认 16。改变后会按当前圆心和大小重建所有软体轮廓，质点越多折痕越细。",
+      help: "轮廓质点数量，8–24；默认 8。改变后会按当前圆心和大小重建所有水滴轮廓。",
     },
     {
       key: "edge_stiffness",
@@ -174,7 +171,16 @@
   const PARAM_BY_KEY = Object.fromEntries(PARAMS.map((param) => [param.key, param]));
 
   const templateSim = new SoftBodySim();
-  templateSim.setup(ARENA, CENTER, SPAWN, RADIUS, 16);
+  templateSim.setup(ARENA, CENTER, CENTER, RADIUS, EDGE_PARTICLES);
+  templateSim.gravity = 500;
+  templateSim.centerMu = 0;
+  templateSim.edgeStiffness = 0.02;
+  templateSim.bendingStiffness = 0;
+  templateSim.areaStrength = 0.001;
+  templateSim.shapeStrength = 0;
+  templateSim.damping = 0.18;
+  templateSim.restitution = 0.02;
+  templateSim.wallFriction = 0.01;
 
   const canvas = document.getElementById("scene");
   const ctx = canvas.getContext("2d");
@@ -188,6 +194,7 @@
   const grabModeButton = document.getElementById("grab-mode");
   const debugCheckbox = document.getElementById("debug");
   const equipotentialCheckbox = document.getElementById("equipotential");
+  const autoEmitCheckbox = document.getElementById("auto-emit");
   const paramHelpEl = document.getElementById("param-help");
   const statusEl = document.getElementById("status");
   const metricsEl = document.getElementById("metrics");
@@ -195,9 +202,15 @@
   const bodies = [];
   const rowElements = {};
   let bodySize = RADIUS;
-  let edgeParticles = 16;
+  let edgeParticles = EDGE_PARTICLES;
   let colorIndex = 0;
   let outlineSmoothing = 1.0;
+  let mergeCount = 0;
+  let splitCount = 0;
+  let nextEmitterIndex = 0;
+  let waterCheckTimer = 0;
+  let autoEmit = autoEmitCheckbox ? autoEmitCheckbox.checked : true;
+  let emitterTimers = EMITTERS.map((_, index) => 0.35 + index * 0.45);
   const values = snapshotParams(templateSim);
   const defaultValues = { ...values };
 
@@ -206,7 +219,6 @@
   let dragging = false;
   let activePointer = null;
   let activeBody = null;
-  let pendingSpawns = 0;
   let grabMode = "edge";
   let debugDraw = false;
   let showEquipotential = true;
@@ -218,7 +230,6 @@
   function snapshotParams(sourceSim) {
     return {
       gravity: sourceSim.gravity,
-      center_mu: sourceSim.centerMu / 1e6,
       body_size: bodySize,
       edge_particles: edgeParticles,
       edge_stiffness: sourceSim.edgeStiffness,
@@ -357,7 +368,7 @@
 
   function applyParamsToBody(body) {
     body.gravity = values.gravity;
-    body.centerMu = values.center_mu * 1e6;
+    body.centerMu = 0;
     body.edgeStiffness = values.edge_stiffness;
     body.bendingStiffness = values.bending_stiffness;
     body.areaStrength = values.area_strength;
@@ -398,9 +409,6 @@
         case "gravity":
           body.gravity = displayValue;
           break;
-        case "center_mu":
-          body.centerMu = displayValue * 1e6;
-          break;
         case "edge_stiffness":
           body.edgeStiffness = displayValue;
           break;
@@ -431,12 +439,15 @@
     }
   }
 
-  function createBody() {
+  function createBodyAt(spawn, options = {}) {
     const body = new SoftBodySim();
-    body.setup(ARENA, CENTER, SPAWN, bodySize, edgeParticles);
+    body.setup(ARENA, CENTER, spawn, bodySize, edgeParticles);
     body.palette = createBodyPalette(colorIndex);
     colorIndex += 1;
     applyParamsToBody(body);
+    body.waterAge = 0;
+    body.mergeCooldown = Number.isFinite(options.mergeCooldown) ? options.mergeCooldown : 0;
+    body.launchRemaining = 0;
     return body;
   }
 
@@ -448,40 +459,95 @@
     return radius;
   }
 
-  function isSpawnFree() {
-    for (const body of bodies) {
-      const distanceToSpawn = Math.hypot(body.centroid.x - SPAWN.x, body.centroid.y - SPAWN.y);
-      if (distanceToSpawn < bodySize + bodyBoundingRadius(body) + 6) {
-        return false;
-      }
+  function bodyEdgeStrain(body) {
+    let strain = 0;
+    for (let i = 0; i < body.positions.length; i += 1) {
+      const a = body.positions[i];
+      const b = body.positions[(i + 1) % body.positions.length];
+      const length = Math.hypot(b.x - a.x, b.y - a.y);
+      const rest = Math.max(body.restEdgeLengths[i], 1e-6);
+      strain = Math.max(strain, Math.abs(length - rest) / rest);
     }
-    return true;
+    return strain;
   }
 
   function updateBodyCount() {
     if (bodyCountEl) {
-      const base = `${bodies.length} 个软体`;
-      bodyCountEl.textContent = pendingSpawns > 0 ? `${base} · 等待 ${pendingSpawns}` : base;
+      bodyCountEl.textContent = `${bodies.length} / ${MAX_BODIES} 滴`;
     }
     if (removeBodyButton) {
       removeBodyButton.disabled = bodies.length === 0;
     }
   }
 
-  function addBodyNow() {
-    bodies.push(createBody());
+  function spawnFromEmitter(index) {
+    if (bodies.length >= MAX_BODIES) {
+      return false;
+    }
+    const emitter = EMITTERS[index % EMITTERS.length];
+    const spawn = {
+      x: emitter.x + emitter.direction * 4,
+      y: ARENA.y + ARENA.h - bodySize - 6,
+    };
+    const body = createBodyAt(spawn, { mergeCooldown: 0.25 });
+    body.launchRemaining = LAUNCH_HOLD;
+    body.launchTarget = {
+      x: CENTER.x + emitter.direction * 28,
+      y: ARENA.y + ARENA.h - 110,
+    };
+    body.grabIndex = -1;
+    body.centerGrab = true;
+    body.grabTarget = { ...body.launchTarget };
+    body.centerGrabDamping = Math.max(body.centerGrabDamping, 50);
+    body.grabMaxAccel = 1800;
+    bodies.push(body);
     updateBodyCount();
     updateMetrics();
     return true;
   }
 
-  function requestAddBody() {
-    if (isSpawnFree()) {
-      addBodyNow();
-    } else {
-      pendingSpawns += 1;
-      updateBodyCount();
+  function emitFromNextEmitter() {
+    const emitted = spawnFromEmitter(nextEmitterIndex);
+    if (emitted) {
+      nextEmitterIndex = (nextEmitterIndex + 1) % EMITTERS.length;
     }
+    return emitted;
+  }
+
+  function updateEmitters(dt) {
+    if (!autoEmit) {
+      return;
+    }
+    for (let i = 0; i < EMITTERS.length; i += 1) {
+      emitterTimers[i] -= dt;
+      if (emitterTimers[i] > 0) {
+        continue;
+      }
+      emitterTimers[i] += EMITTER_INTERVAL;
+      spawnFromEmitter(i);
+    }
+  }
+
+  function updateLaunchers(dt) {
+    for (const body of bodies) {
+      if (!(body.launchRemaining > 0)) {
+        continue;
+      }
+      if (body === activeBody) {
+        body.launchRemaining = 0;
+        continue;
+      }
+      body.launchRemaining -= dt;
+      body.grabTarget = { ...body.launchTarget };
+      if (body.launchRemaining <= 0) {
+        body.launchRemaining = 0;
+        body.releaseGrab();
+      }
+    }
+  }
+
+  function requestAddBody() {
+    return emitFromNextEmitter();
   }
 
   function removeOldestBody() {
@@ -492,15 +558,78 @@
     if (activeBody === removed) {
       endDrag();
     }
-    processPendingSpawns();
     updateBodyCount();
     updateMetrics();
   }
 
-  function processPendingSpawns() {
-    if (pendingSpawns > 0 && isSpawnFree()) {
-      pendingSpawns -= 1;
-      bodies.push(createBody());
+  function updateWater(dt) {
+    for (const body of bodies) {
+      body.waterAge = (body.waterAge || 0) + dt;
+      body.mergeCooldown = Math.max(0, (body.mergeCooldown || 0) - dt);
+    }
+
+    waterCheckTimer += dt;
+    if (waterCheckTimer < WATER_CHECK_INTERVAL) {
+      return;
+    }
+    waterCheckTimer = 0;
+
+    let changed = false;
+    const mergeGap = typeof WATER_MERGE_GAP === "number" ? WATER_MERGE_GAP : 8;
+
+    for (let i = bodies.length - 1; i >= 0; i -= 1) {
+      if (bodies.length >= MAX_BODIES) {
+        break;
+      }
+      const body = bodies[i];
+      if (body === activeBody || !shouldSplitBody(body)) {
+        continue;
+      }
+      const children = splitSoftBody(body);
+      if (!children || children.length !== 2) {
+        continue;
+      }
+      bodies.splice(i, 1, children[0], children[1]);
+      splitCount += 1;
+      changed = true;
+    }
+
+    for (let i = 0; i < bodies.length; i += 1) {
+      let j = i + 1;
+      while (j < bodies.length) {
+        const a = bodies[i];
+        const b = bodies[j];
+        if (a === activeBody || b === activeBody || a.launchRemaining > 0 || b.launchRemaining > 0) {
+          j += 1;
+          continue;
+        }
+        if ((a.mergeCooldown || 0) > 0 || (b.mergeCooldown || 0) > 0) {
+          j += 1;
+          continue;
+        }
+        const centerDistance = Math.hypot(a.centroid.x - b.centroid.x, a.centroid.y - b.centroid.y);
+        if (centerDistance > bodyBoundingRadius(a) + bodyBoundingRadius(b) + mergeGap) {
+          j += 1;
+          continue;
+        }
+        if (bodyCollisionDistance(a, b) > mergeGap) {
+          j += 1;
+          continue;
+        }
+        const merged = mergeSoftBodies(a, b, { mergeCooldown: 0.55 });
+        if (!merged) {
+          j += 1;
+          continue;
+        }
+        merged.palette = a.palette;
+        bodies[i] = merged;
+        bodies.splice(j, 1);
+        mergeCount += 1;
+        changed = true;
+      }
+    }
+
+    if (changed) {
       updateBodyCount();
       updateMetrics();
     }
@@ -512,7 +641,7 @@
       endDrag();
     }
     pauseButton.textContent = paused ? "继续" : "暂停";
-    statusEl.textContent = paused ? "已暂停 · 参数仍可实时调整" : "运行中 · 重力 + 中心引力";
+    statusEl.textContent = paused ? "已暂停 · 参数仍可实时调整" : "运行中 · 水流 + 重力";
     statusEl.classList.toggle("paused", paused);
     accumulator = 0;
   }
@@ -533,12 +662,30 @@
     setGrabMode(grabMode === "edge" ? "center" : "edge");
   }
 
+  function setAutoEmit(enabled) {
+    autoEmit = Boolean(enabled);
+    if (autoEmitCheckbox) {
+      autoEmitCheckbox.checked = autoEmit;
+    }
+  }
+
   function resetSimulation() {
     endDrag();
     bodies.length = 0;
-    pendingSpawns = 0;
     colorIndex = 0;
-    bodies.push(createBody());
+    mergeCount = 0;
+    splitCount = 0;
+    nextEmitterIndex = 0;
+    waterCheckTimer = 0;
+    emitterTimers = EMITTERS.map((_, index) => 0.35 + index * 0.45);
+    const spacing = Math.max(bodySize * 2.1, 28);
+    for (let i = 0; i < INITIAL_DROPS; i += 1) {
+      const spawn = {
+        x: CENTER.x + (i - (INITIAL_DROPS - 1) / 2) * spacing,
+        y: ARENA.y + ARENA.h - bodySize - 8,
+      };
+      bodies.push(createBodyAt(spawn));
+    }
     metricsTimer = 0;
     updateBodyCount();
     updateMetrics();
@@ -565,7 +712,7 @@
       contact = contact || body.lastContact;
     }
     const contactText = contact ? " · 接触边界" : "";
-    metricsEl.textContent = `最大速度 ${Math.round(maxSpeed)} px/s\n最大面积误差 ${(maxAreaError * 100).toFixed(1)}%${contactText}`;
+    metricsEl.textContent = `最大速度 ${Math.round(maxSpeed)} px/s\n最大面积误差 ${(maxAreaError * 100).toFixed(1)}%${contactText}\n合并 ${mergeCount} · 分离 ${splitCount} · ${bodies.length} 滴`;
   }
 
   function setupCanvas() {
@@ -688,6 +835,9 @@
       accumulator += frameDelta;
       let steps = 0;
       while (accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
+        updateLaunchers(FIXED_STEP);
+        updateEmitters(FIXED_STEP);
+        updateWater(FIXED_STEP);
         for (const body of bodies) {
           body.step(FIXED_STEP);
         }
@@ -705,7 +855,6 @@
       }
     }
 
-    processPendingSpawns();
     draw(now / 1000);
     requestAnimationFrame(frame);
   }
@@ -720,7 +869,7 @@
     if (showEquipotential) {
       drawEquipotentials();
     }
-    drawGravitySource(time);
+    drawEmitters(time);
     for (const body of bodies) {
       drawBody(body);
     }
@@ -752,16 +901,6 @@
     ctx.strokeRect(ARENA.x, ARENA.y, ARENA.w, ARENA.h);
     ctx.restore();
 
-    ctx.save();
-    ctx.strokeStyle = COLORS.ghost;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 7]);
-    ctx.beginPath();
-    ctx.arc(SPAWN.x, SPAWN.y, RADIUS, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    drawText("初始位置", SPAWN.x - RADIUS, SPAWN.y + RADIUS + 22, 13, COLORS.ghost, "left");
-
     drawGravityArrow();
   }
 
@@ -785,61 +924,46 @@
     drawText("g", startX + 12, startY + 2, 17, COLORS.text, "left");
   }
 
-  function drawGravitySource(time) {
-    const pulse = 0.5 + 0.5 * Math.sin(time * 2.2);
-    const glow = ctx.createRadialGradient(CENTER.x, CENTER.y, 0, CENTER.x, CENTER.y, 32 + pulse * 8);
-    glow.addColorStop(0, "rgba(245, 196, 81, 0.28)");
-    glow.addColorStop(1, "rgba(245, 196, 81, 0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(CENTER.x, CENTER.y, 32 + pulse * 8, 0, Math.PI * 2);
-    ctx.fill();
+  function drawEmitters(time) {
+    const bottom = ARENA.y + ARENA.h;
+    const pulse = 0.5 + 0.5 * Math.sin(time * 3.2);
+    for (const emitter of EMITTERS) {
+      const nozzleY = bottom - 26;
+      const glow = ctx.createRadialGradient(emitter.x, nozzleY, 0, emitter.x, nozzleY, 28 + pulse * 7);
+      glow.addColorStop(0, COLORS.faucetGlow);
+      glow.addColorStop(1, "rgba(104, 216, 232, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(emitter.x, nozzleY, 28 + pulse * 7, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.strokeStyle = "rgba(245, 196, 81, 0.48)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(CENTER.x, CENTER.y, 13 + pulse * 6, 0, Math.PI * 2);
-    ctx.stroke();
+      ctx.fillStyle = "rgba(76, 132, 158, 0.42)";
+      ctx.fillRect(emitter.x - 10, bottom - 12, 20, 12);
+      ctx.fillStyle = COLORS.faucet;
+      ctx.fillRect(emitter.x - 5, nozzleY, 10, 26);
+      ctx.fillStyle = "#0b2838";
+      ctx.fillRect(emitter.x - 8, nozzleY - 4, 16, 5);
 
-    ctx.fillStyle = COLORS.source;
-    ctx.beginPath();
-    ctx.arc(CENTER.x, CENTER.y, 7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#fff6d9";
-    ctx.beginPath();
-    ctx.arc(CENTER.x, CENTER.y, 3, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.strokeStyle = COLORS.faucet;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(emitter.x + emitter.direction * 16, nozzleY - 8);
+      ctx.lineTo(emitter.x + emitter.direction * 38, nozzleY - 30);
+      ctx.lineTo(emitter.x + emitter.direction * 28, nozzleY - 31);
+      ctx.moveTo(emitter.x + emitter.direction * 38, nozzleY - 30);
+      ctx.lineTo(emitter.x + emitter.direction * 37, nozzleY - 19);
+      ctx.stroke();
 
-    ctx.strokeStyle = "rgba(245, 196, 81, 0.72)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(CENTER.x - 20, CENTER.y);
-    ctx.lineTo(CENTER.x - 10, CENTER.y);
-    ctx.moveTo(CENTER.x + 10, CENTER.y);
-    ctx.lineTo(CENTER.x + 20, CENTER.y);
-    ctx.moveTo(CENTER.x, CENTER.y - 20);
-    ctx.lineTo(CENTER.x, CENTER.y - 10);
-    ctx.moveTo(CENTER.x, CENTER.y + 10);
-    ctx.lineTo(CENTER.x, CENTER.y + 20);
-    ctx.stroke();
-
-    drawText("引力中心", CENTER.x + 18, CENTER.y - 18, 14, COLORS.source, "left");
+      drawText(emitter.label, emitter.x - 22, bottom - 44, 11, COLORS.textMuted, "left");
+    }
   }
 
   function fieldSignature() {
-    return `${values.gravity.toFixed(4)}|${(values.center_mu * 1e6).toFixed(4)}|${CENTER_EPSILON.toFixed(4)}`;
+    return values.gravity.toFixed(4);
   }
 
   function potentialAt(x, y) {
-    const dx = CENTER.x - x;
-    const dy = CENTER.y - y;
-    const softened = dx * dx + dy * dy + CENTER_EPSILON * CENTER_EPSILON;
-    let value = -values.gravity * y;
-    const mu = values.center_mu * 1e6;
-    if (mu > 0) {
-      value -= mu / Math.sqrt(softened);
-    }
-    return value;
+    return -values.gravity * y;
   }
 
   function buildLevels(values) {
@@ -912,7 +1036,7 @@
     if (contourCache && contourCache.signature === signature) {
       return contourCache;
     }
-    if (values.gravity === 0 && values.center_mu === 0) {
+    if (values.gravity === 0) {
       contourCache = { signature, levels: [] };
       return contourCache;
     }
@@ -1148,9 +1272,9 @@
   }
 
   function drawHints() {
-    drawText("封闭实验区 · 240 Hz 固定步长", ARENA.x + 24, ARENA.y + ARENA.h - 18, 12, COLORS.textMuted, "left");
-    drawText("拖动软体轮廓施加局部力", ARENA.x + ARENA.w - 24, ARENA.y + 30, 12, COLORS.textMuted, "right");
-    if (showEquipotential && (values.gravity !== 0 || values.center_mu !== 0)) {
+    drawText("封闭水流区 · 240 Hz", ARENA.x + 24, ARENA.y + 22, 12, COLORS.textMuted, "left");
+    drawText("靠近合并 · 拉伸临界分离", ARENA.x + ARENA.w - 24, ARENA.y + 30, 12, COLORS.textMuted, "right");
+    if (showEquipotential && values.gravity !== 0) {
       const x = ARENA.x + ARENA.w - 150;
       const y = ARENA.y + 52;
       ctx.strokeStyle = CONTOUR_MAJOR;
@@ -1189,6 +1313,11 @@
   equipotentialCheckbox.addEventListener("change", () => {
     showEquipotential = equipotentialCheckbox.checked;
   });
+  if (autoEmitCheckbox) {
+    autoEmitCheckbox.addEventListener("change", () => {
+      setAutoEmit(autoEmitCheckbox.checked);
+    });
+  }
 
   window.addEventListener("keydown", (event) => {
     const tag = document.activeElement && document.activeElement.tagName;
@@ -1215,19 +1344,37 @@
     getDefaults: () => ({ ...defaultValues }),
     getContours: () => getContours(),
     getBodies: () => bodies.map((body) => ({
+      x: body.centroid.x,
+      y: body.centroid.y,
       radius: body.restRadius,
       particles: body.positions.length,
       hue: body.palette ? body.palette.hue : null,
       centerGrabDamping: body.centerGrabDamping,
+      aspect: bodyAspect(body),
+      edgeStrain: bodyEdgeStrain(body),
+      areaError: body.lastAreaError,
+      waterAge: body.waterAge || 0,
     })),
     getPrimaryBody: () => bodies[0] || null,
-    getPendingSpawns: () => pendingSpawns,
+    getLargestBody: () => bodies.reduce((largest, body) => (!largest || body.restRadius > largest.restRadius ? body : largest), null),
     addBody: requestAddBody,
     removeOldest: removeOldestBody,
     getGrabMode: () => grabMode,
     setGrabMode,
+    getEmitters: () => EMITTERS.map((emitter) => ({ ...emitter })),
+    isAutoEmit: () => autoEmit,
+    setAutoEmit,
+    emitNow: requestAddBody,
+    getWaterStats: () => ({
+      bodies: bodies.length,
+      maxBodies: MAX_BODIES,
+      initialDrops: INITIAL_DROPS,
+      mergeCount,
+      splitCount,
+      autoEmit,
+    }),
   };
 
-  setGrabMode("edge");
+  setGrabMode("center");
   requestAnimationFrame(frame);
 }());

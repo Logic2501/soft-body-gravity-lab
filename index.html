@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="单软体在重力、中心引力、惯性与封闭边界碰撞下的实时形变实验。">
+  <meta name="description" content="可合并、临界分离的软体水滴在重力与封闭边界下的流动实验。">
   <meta name="theme-color" content="#070b14">
-  <title>软体引力实验</title>
+  <title>软体水流实验</title>
   <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
@@ -18,20 +18,20 @@
 
     <aside class="panel" aria-label="实验参数控制面板">
       <header class="panel-header">
-        <h1>软体引力实验</h1>
-        <p class="subtitle">质点环 · PBD 约束 · 固定 240 Hz</p>
+        <h1>软体水流实验</h1>
+        <p class="subtitle">水滴 · 合并 · 临界分离 · 240 Hz</p>
       </header>
 
       <div id="params" class="params"></div>
       <p id="param-help" class="param-help" aria-live="polite"></p>
 
       <div class="body-actions">
-        <button id="add-body" class="square-button" type="button" title="添加软体；默认出生点被占用时排队等待" aria-label="添加软体">+</button>
-        <button id="remove-body" class="square-button" type="button" title="删除最早添加的软体" aria-label="删除最早添加的软体">−</button>
-        <span id="body-count" class="body-count">1 个软体</span>
+        <button id="add-body" class="square-button" type="button" title="从水龙头再发射一滴水" aria-label="发射水滴">+</button>
+        <button id="remove-body" class="square-button" type="button" title="删除最早添加的水滴" aria-label="删除最早添加的水滴">−</button>
+        <span id="body-count" class="body-count">6 / 32 滴</span>
       </div>
 
-      <button id="grab-mode" class="wide-button mode-button" type="button" title="切换拖拽方式：边缘局部形变 / 中心整体拖动">拖拽点：边缘</button>
+      <button id="grab-mode" class="wide-button mode-button" type="button" title="切换拖拽方式：边缘局部形变 / 中心整体拖动">拖拽点：中心</button>
 
       <div class="actions">
         <button id="pause" type="button">暂停</button>
@@ -49,16 +49,21 @@
         <span>显示等势能线</span>
       </label>
 
-      <p id="status" class="status">运行中 · 重力 + 中心引力</p>
+      <label class="debug-toggle">
+        <input id="auto-emit" type="checkbox" checked>
+        <span>自动水龙头</span>
+      </label>
+
+      <p id="status" class="status">运行中 · 水流 + 重力</p>
       <p id="metrics" class="metrics">最大速度 — · 面积误差 —</p>
 
       <p class="hint">
         拖动模式：边缘局部形变 / 中心整体拖动<br>
-        松开后恢复纯物理模拟<br>
-        + 添加软体 · − 删除最早软体 · 重置回到 1 个<br>
+        水滴靠近自动合并，拉伸超过临界值自动分离<br>
+        + 从水龙头发射 · − 删除最早水滴 · 重置回到 6 滴<br>
         空格 暂停/继续 · R 重置<br>
-        边缘/弯曲/面积调到 0 可深度折叠<br>
-        轮廓平滑调到 0 显示原始折痕<br>
+        8 个质点起步，软参数适合流动与合并<br>
+        关闭自动水龙头可手动发射和拖拽<br>
         数值框支持精确输入，非法值自动还原
       </p>
 
@@ -70,6 +75,7 @@
   <script src="src/soft_body_sim.js"></script>
   <script src="src/body_collisions.js"></script>
   <script src="src/body_palette.js"></script>
+  <script src="src/body_merge_split.js"></script>
   <script src="src/app.js"></script>
 </body>
 </html>

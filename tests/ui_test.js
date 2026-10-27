@@ -125,9 +125,30 @@ async function main() {
     const hookReady = await evaluate("typeof window.__softBodyDemo === 'object'");
     expect(hookReady, "ui: browser test hook should be available");
 
+    await evaluate("window.__softBodyDemo.setAutoEmit(false)");
+    const waterConfig = await evaluate(`(() => ({
+      emitters: window.__softBodyDemo.getEmitters(),
+      stats: window.__softBodyDemo.getWaterStats(),
+      auto: window.__softBodyDemo.isAutoEmit(),
+      checkbox: document.getElementById('auto-emit').checked,
+    }))()`);
+    expect(waterConfig.emitters.length === 2, "ui: water scene should expose two faucet emitters");
+    expect(waterConfig.stats.initialDrops === 6 && waterConfig.stats.maxBodies === 32, "ui: water scene should start with six drops and cap at 32");
+    expect(waterConfig.auto === false && waterConfig.checkbox === false, "ui: auto emitter should be switchable");
+    const autoToggle = await evaluate(`(() => {
+      const checkbox = document.getElementById('auto-emit');
+      checkbox.click();
+      const on = window.__softBodyDemo.isAutoEmit();
+      checkbox.click();
+      return { on, off: window.__softBodyDemo.isAutoEmit() };
+    })()`);
+    expect(autoToggle.on === true && autoToggle.off === false, "ui: auto faucet checkbox should drive the emitter state");
+
     const defaults = await evaluate("window.__softBodyDemo.getDefaults()");
     const paramKeys = Object.keys(defaults);
     expect(paramKeys.length > 0, "ui: defaults should expose parameter keys");
+    expect(!("center_mu" in defaults), "ui: water scene should not expose center gravity");
+    expect(defaults.body_size === 22 && defaults.edge_particles === 8, "ui: water defaults should use small eight-particle drops");
 
     const rowCount = await evaluate("document.querySelectorAll('#params .param').length");
     expect(rowCount === paramKeys.length, "ui: one parameter row per default key");
@@ -229,9 +250,10 @@ async function main() {
     await evaluate("document.getElementById('pause').click()");
     expect((await evaluate("window.__softBodyDemo.paused")) === false, "ui: continue button should resume");
 
-    const beforeMotion = await evaluate("({ x: window.__softBodyDemo.getPrimaryBody().centroid.x, y: window.__softBodyDemo.getPrimaryBody().centroid.y })");
+    await evaluate("window.__softBodyDemo.reset(); window.__softBodyDemo.emitNow();");
+    const beforeMotion = await evaluate("(() => { const body = window.__softBodyDemo.getBodies().at(-1); return { x: body.x, y: body.y }; })()");
     await sleep(500);
-    const afterMotion = await evaluate("({ x: window.__softBodyDemo.getPrimaryBody().centroid.x, y: window.__softBodyDemo.getPrimaryBody().centroid.y })");
+    const afterMotion = await evaluate("(() => { const body = window.__softBodyDemo.getBodies().at(-1); return { x: body.x, y: body.y }; })()");
     const moved = Math.hypot(afterMotion.x - beforeMotion.x, afterMotion.y - beforeMotion.y);
     expect(moved > 1, "ui: animation loop should advance the simulation");
 
@@ -268,7 +290,7 @@ async function main() {
     })()`);
     expect(debugResult === true, "ui: debug checkbox should toggle");
 
-    await evaluate("window.__softBodyDemo.setParam('gravity', 250); window.__softBodyDemo.setParam('center_mu', 7);");
+    await evaluate("window.__softBodyDemo.setParam('gravity', 250);");
     const equipotentialDefault = await evaluate("document.getElementById('equipotential').checked");
     expect(equipotentialDefault === true, "ui: equipotential lines should be enabled by default");
     const contourStats = await evaluate(`(() => {
@@ -328,24 +350,21 @@ async function main() {
       document.getElementById('reset').click();
       const initial = {
         bodies: demo.getBodies().length,
-        pending: demo.getPendingSpawns(),
         count: document.getElementById('body-count').textContent,
       };
       document.getElementById('add-body').click();
-      const queued = {
+      const afterAdd = {
         bodies: demo.getBodies().length,
-        pending: demo.getPendingSpawns(),
         count: document.getElementById('body-count').textContent,
       };
       document.getElementById('remove-body').click();
       const afterRemove = {
         bodies: demo.getBodies().length,
-        pending: demo.getPendingSpawns(),
         count: document.getElementById('body-count').textContent,
         hue: demo.getBodies()[0] ? demo.getBodies()[0].hue : null,
       };
       const sizeNumber = document.querySelector('[data-key="body_size"] .param-number');
-      sizeNumber.value = '90';
+      sizeNumber.value = '40';
       sizeNumber.dispatchEvent(new Event('change', { bubbles: true }));
       const edgeNumber = document.querySelector('[data-key="edge_particles"] .param-number');
       edgeNumber.value = '24';
@@ -355,35 +374,76 @@ async function main() {
       dampingNumber.dispatchEvent(new Event('change', { bubbles: true }));
       return {
         initial,
-        queued,
+        afterAdd,
         afterRemove,
         radii: demo.getBodies().map((body) => body.radius),
         particles: demo.getBodies().map((body) => body.particles),
         centerDamping: demo.getBodies().map((body) => body.centerGrabDamping),
       };
     })()`);
-    expect(bodyLifecycle.initial.bodies === 1, "ui: reset should leave one body");
-    expect(bodyLifecycle.queued.bodies === 1 && bodyLifecycle.queued.pending === 1, "ui: occupied spawn should queue a body");
-    expect(bodyLifecycle.queued.count.includes("等待 1"), "ui: queued spawn should be visible in the body count");
-    expect(bodyLifecycle.afterRemove.bodies === 1 && bodyLifecycle.afterRemove.pending === 0, "ui: removing the oldest body should let the queued body spawn");
+    expect(bodyLifecycle.initial.bodies === 6, "ui: reset should leave six water drops");
+    expect(bodyLifecycle.initial.count.includes("6 / 32"), "ui: reset count should show the drop cap");
+    expect(bodyLifecycle.afterAdd.bodies === 7, "ui: faucet button should emit one drop");
+    expect(bodyLifecycle.afterRemove.bodies === 6, "ui: removing the oldest drop should keep the pool size");
     expect(Math.abs(bodyLifecycle.afterRemove.hue - 174) < 1e-9, "ui: new body colors should follow the fixed hue path");
-    expect(bodyLifecycle.radii.length > 0 && bodyLifecycle.radii.every((radius) => Math.abs(radius - 90) < 1e-6), "ui: body size slider should scale every body");
-    expect(bodyLifecycle.particles.length > 0 && bodyLifecycle.particles.every((count) => count === 24), "ui: edge particle count should rebuild every body");
-    expect(bodyLifecycle.centerDamping.length > 0 && bodyLifecycle.centerDamping.every((value) => Math.abs(value - 10) < 1e-9), "ui: center drag damping should apply to every body");
+    expect(bodyLifecycle.radii.length > 0 && bodyLifecycle.radii.every((radius) => Math.abs(radius - 40) < 1e-6), "ui: body size slider should scale every drop");
+    expect(bodyLifecycle.particles.length > 0 && bodyLifecycle.particles.every((count) => count === 24), "ui: edge particle count should rebuild every drop");
+    expect(bodyLifecycle.centerDamping.length > 0 && bodyLifecycle.centerDamping.every((value) => Math.abs(value - 10) < 1e-9), "ui: center drag damping should apply to every drop");
 
     const grabMode = await evaluate(`(() => {
       const demo = window.__softBodyDemo;
       const button = document.getElementById('grab-mode');
       const initial = { text: button.textContent, mode: demo.getGrabMode() };
       button.click();
-      const center = { text: button.textContent, mode: demo.getGrabMode() };
-      button.click();
       const edge = { text: button.textContent, mode: demo.getGrabMode() };
-      return { initial, center, edge };
+      button.click();
+      const center = { text: button.textContent, mode: demo.getGrabMode() };
+      return { initial, edge, center };
     })()`);
-    expect(grabMode.initial.mode === "edge" && grabMode.initial.text.includes("边缘"), "ui: drag mode should start at edge");
-    expect(grabMode.center.mode === "center" && grabMode.center.text.includes("中心"), "ui: drag mode should switch to center");
-    expect(grabMode.edge.mode === "edge" && grabMode.edge.text.includes("边缘"), "ui: drag mode should switch back to edge");
+    expect(grabMode.initial.mode === "center" && grabMode.initial.text.includes("中心"), "ui: drag mode should start at center");
+    expect(grabMode.edge.mode === "edge" && grabMode.edge.text.includes("边缘"), "ui: drag mode should switch to edge");
+    expect(grabMode.center.mode === "center" && grabMode.center.text.includes("中心"), "ui: drag mode should switch back to center");
+
+    const flow = await evaluate(`(async () => {
+      const demo = window.__softBodyDemo;
+      demo.restoreDefaults();
+      demo.reset();
+      demo.setAutoEmit(true);
+      if (demo.paused) {
+        document.getElementById('pause').click();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+      const stats = demo.getWaterStats();
+      demo.setAutoEmit(false);
+      return stats;
+    })()`);
+    console.log(`[water flow] bodies=${flow.bodies} merges=${flow.mergeCount} splits=${flow.splitCount}`);
+    expect(flow.mergeCount > 0, "ui: nearby faucet drops should merge automatically");
+    expect(flow.bodies >= 1, "ui: water flow should keep a visible pool");
+
+    const split = await evaluate(`(async () => {
+      const demo = window.__softBodyDemo;
+      demo.restoreDefaults();
+      demo.reset();
+      demo.setAutoEmit(false);
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+      const body = demo.getLargestBody();
+      const before = { count: demo.getBodies().length, radius: body ? body.restRadius : 0, splits: demo.getWaterStats().splitCount };
+      if (!body) {
+        return { before, after: null };
+      }
+      body.waterAge = 2;
+      body.mergeCooldown = 0;
+      for (const point of body.positions) {
+        point.x = body.centroid.x + (point.x - body.centroid.x) * 3;
+        point.y = body.centroid.y + (point.y - body.centroid.y) * 0.3;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return { before, after: demo.getWaterStats() };
+    })()`);
+    console.log(`[water split] largest_radius=${split.before.radius.toFixed(1)} bodies=${split.before.count}->${split.after ? split.after.bodies : "?"} splits=${split.after ? split.after.splitCount : "?"}`);
+    expect(split.after && split.after.splitCount > split.before.splits, "ui: critical deformation should split the largest drop");
+    expect(split.after && split.after.bodies > split.before.count, "ui: critical split should add a drop");
 
     await send("Emulation.setDeviceMetricsOverride", {
       width: 1280,

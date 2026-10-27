@@ -9,7 +9,7 @@
 }(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const SEGMENTS = 32;
+  const SEGMENTS = 8;
 
   const DEFAULT_GRAVITY = 250;
   const DEFAULT_CENTER_MU = 7e6;
