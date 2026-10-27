@@ -21,14 +21,26 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout prototype
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: prototype-src
+
+      - name: Checkout water branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/merge-split-water
+          path: water-src
 
       - name: Prepare static site
         run: |
-          mkdir -p _site
-          cp index.html _site/
-          cp -R assets src _site/
+          mkdir -p _site/prototype _site/water
+          cp prototype-src/index.html _site/prototype/
+          cp -R prototype-src/assets prototype-src/src _site/prototype/
+          cp water-src/index.html _site/water/
+          cp -R water-src/assets water-src/src _site/water/
+          cp prototype-src/pages/index.html _site/index.html
           touch _site/.nojekyll
 
       - name: Configure Pages

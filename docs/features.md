@@ -33,7 +33,7 @@
 | F11 | 多软体添加/删除：`+` 添加、`−` 删除最早 | ✅ | `src/app.js` | 默认出生点占用时排队；空位后加入；删除从最早开始 |
 | F12 | 软体大小滑块，同时缩放所有软体 | ✅ | `src/app.js`、`src/soft_body_sim.js` | `setRadius` 缩放当前位置/初始位置/约束/面积 |
 | F13 | 重置语义：清空附加软体，恢复 1 个默认软体 | ✅ | `src/app.js` | 保留参数和当前大小 |
-| F14 | GitHub Pages 自动部署 | ✅ | `.github/workflows/pages.yml` | 推送 `main` 后部署；线上页面可访问 |
+| F14 | GitHub Pages 单站多版本 | ✅ | `.github/workflows/pages.yml`、`pages/index.html` | 根入口选择；`/prototype/` 原型、`/water/` 水流版；水流入口 NEW 角标 |
 | F15 | 可选 Godot 4 原生版本 | ✅ | `native/` | 不参与 Web 部署；测试已冷归档 |
 | F16 | 分层测试：快速回归 / deep / Chrome UI | ✅ | `tests/`、`package.json` | `npm test` 快速；`npm run test:deep` 跑长时/极端场景 |
 | F17 | 冷归档 Godot 测试 | ✅ | `archive/native-godot-tests/` | 不参与 npm；修改 native 时按 README 恢复 |
@@ -64,7 +64,7 @@
 7. 新软体颜色按固定色相方向连续偏移；重置回到基准色。
 8. 等势线开关、上下覆盖、参数变化后重算。
 9. `npm test`；物理模型/碰撞/约束改动后再跑 `npm run test:deep`。
-10. 双击 `index.html` 与 Pages 页面可加载。
+10. 双击 `index.html` 与 Pages 根入口、`/prototype/`、`/water/` 可加载。
 
 ## 本地 Git 找回流程
 
@@ -101,6 +101,12 @@ git diff <commit> -- src/ tests/
 ### 2026-10-26 高光与等势线
 - 关闭果冻白色高光（Web 与 Godot 版）。
 - 等势线改为 14 条面积分位等级，覆盖 y=50–756，最小等级间距约 3.1%。
+
+### 2026-10-27 Pages 单站多版本
+
+- 根路径改为极简入口，选择“软体引力原型”或“软体水流版”；水流版带高亮 `NEW` 角标。
+- 构建时分别 checkout `main` 与 `feat/merge-split-water`，输出 `/prototype/` 与 `/water/`。
+- 从 `main` 部署，绕开 `github-pages` environment 的 feature branch 保护限制。
 
 ### 2026-10-26 GitHub Pages
 - 创建公开仓库 `Logic2501/soft-body-gravity-lab`。

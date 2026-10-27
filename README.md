@@ -7,7 +7,9 @@
 单个 2D 软体在向下重力、软化中心引力、惯性与封闭边界碰撞下的实时形变实验。
 
 - 仓库：https://github.com/Logic2501/soft-body-gravity-lab
-- GitHub Pages：https://logic2501.github.io/soft-body-gravity-lab/
+- GitHub Pages 入口：https://logic2501.github.io/soft-body-gravity-lab/
+- 原型：https://logic2501.github.io/soft-body-gravity-lab/prototype/
+- 水流版：https://logic2501.github.io/soft-body-gravity-lab/water/
 
 主交付是**纯静态 Web 单页**：无后端、无构建步骤、无运行时依赖。双击 `index.html` 即可运行，也可以直接部署到 GitHub Pages。另在 `native/` 保留同源 Godot 4 版本作为可选原生实现。
 
@@ -23,17 +25,17 @@
 
 ## GitHub Pages
 
-仓库内已提供 `.github/workflows/pages.yml`，推送 `main` 后可自动构建并部署静态页面。
+Pages 只有一个站点，根路径是极简入口：
 
-首次使用时在 GitHub 仓库设置中：
+- `/`：选择“软体引力原型”或“软体水流版”
+- `/prototype/`：`main` 分支的原型
+- `/water/`：`feat/merge-split-water` 分支的水流版
 
-1. Settings → Pages → Source 选择 **GitHub Actions**；
-2. 推到 `main`，等待 Actions 完成；
-3. 访问 Actions 输出的 Pages URL。
+`.github/workflows/pages.yml` 在同一次构建中分别 checkout `main` 和 `feat/merge-split-water`，组合出上述目录后通过 GitHub Actions 部署。水流版入口带高亮 `NEW` 角标。
 
-也可以不用 Actions：Settings → Pages → Deploy from a branch，选择 `main` 和根目录 `/`。
+推送 `main` 会自动更新整个站点；水流分支更新后，从 `main` 手动运行 workflow 即可刷新 `/water/`。feature branch 不直接作为部署 ref，避免 `github-pages` 环境保护规则拦截。
 
-当前仓库已推送到 `main`，Pages 使用 GitHub Actions 部署。若 Fork 后复用，需在自己的仓库 Settings → Pages 中选择 GitHub Actions。
+本地双击根目录 `index.html` 仍然是原型；入口页只在 Pages 构建中生成。
 
 ## 操作
 
@@ -52,7 +54,8 @@
 
 | 文件 | 作用 |
 |---|---|
-| `index.html` | 静态页面骨架、控制面板、脚本入口 |
+| `index.html` | 原型静态页面骨架、控制面板、脚本入口 |
+| `pages/index.html` | Pages 根入口，选择原型 / 水流版 |
 | `assets/style.css` | 响应式布局、面板与控件样式 |
 | `src/soft_body_sim.js` | 浏览器/Node 共用的 PBD 软体求解器 |
 | `src/body_collisions.js` | 软体间边缘段碰撞/互斥与摩擦 |

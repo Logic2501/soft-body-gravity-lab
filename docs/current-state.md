@@ -12,8 +12,9 @@
 - 等势能线按总势能 `Φ = −g·y − μ/√(r²+ε²)` 绘制，10 px 网格 marching squares，参数变化时重算缓存。
 - `native/` 为可选早期 Godot 4 版本，不参与 Web 部署。
 - 仓库：https://github.com/Logic2501/soft-body-gravity-lab
-- Pages：https://logic2501.github.io/soft-body-gravity-lab/
-- `.github/workflows/pages.yml` 已部署到 GitHub Pages。
+- Pages 入口：https://logic2501.github.io/soft-body-gravity-lab/
+- 原型：`/prototype/`；水流版：`/water/`
+- `main` 的 workflow 同次构建两个分支；水流版入口带 NEW 角标。
 
 ## 启动
 
@@ -56,4 +57,4 @@ npm run test:deep   # 追加 20s 稳定性、默认参数长跑、可重复性�
 
 - 由用户在浏览器中确认多软体、边缘/中心拖拽、软体大小、质点数、色相路径和果冻观感。
 - 软体间已有段碰撞；若需要同软体自碰撞或更稳定的堆叠，再单独评估。
-- GitHub Pages 已启用并推送；视觉确认后只做小范围参数/视觉调整。
+- Pages 已改为单站多版本入口；后续视觉确认只做小范围调整。
