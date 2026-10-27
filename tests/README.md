@@ -18,5 +18,6 @@ npm run test:ui    # 只跑浏览器 UI
 - 质点数重建与固定浅蓝色由物理测试覆盖；UI 测试覆盖边缘/面积范围、新水滴大小、水龙头键盘/鼠标连发、擦除和自动水流合并/强制分裂。
 - 浏览器测试需要 Chrome；可用 `CHROME_BIN` 指定路径。无截图、无视觉断言。
 - UI 测试会启动无头 Chrome 调试端口；不要同时并行跑多个 `ui_test.js`。
+- 默认测试本地 `file://`；可用 `PAGE_URL=http://127.0.0.1:8000/ node tests/ui_test.js` 验证本地服务器。
 - Godot 原生测试已冷归档到 `archive/native-godot-tests/`；只在修改 `native/` 时恢复。
 - 修改物理/UI 后至少跑 `npm test`；改动物理模型、碰撞或约束时再跑 `npm run test:deep`。

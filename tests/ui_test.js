@@ -8,7 +8,7 @@ const { pathToFileURL } = require("node:url");
 
 const CHROME = process.env.CHROME_BIN || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const PORT = 9333;
-const PAGE_URL = pathToFileURL(path.resolve(__dirname, "..", "index.html")).href;
+const PAGE_URL = process.env.PAGE_URL || pathToFileURL(path.resolve(__dirname, "..", "index.html")).href;
 const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "softbody-chrome-"));
 
 const failures = [];
