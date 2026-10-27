@@ -125,6 +125,8 @@ async function main() {
     const hookReady = await evaluate("typeof window.__softBodyDemo === 'object'");
     expect(hookReady, "ui: browser test hook should be available");
 
+    const autoDefault = await evaluate("document.getElementById('auto-emit').checked");
+    expect(autoDefault === false, "ui: auto faucet should be off by default");
     await evaluate("window.__softBodyDemo.setAutoEmit(false)");
     const waterConfig = await evaluate(`(() => ({
       emitters: window.__softBodyDemo.getEmitters(),
@@ -236,7 +238,8 @@ async function main() {
     const paramKeys = Object.keys(defaults);
     expect(paramKeys.length > 0, "ui: defaults should expose parameter keys");
     expect(!("center_mu" in defaults), "ui: water scene should not expose center gravity");
-    expect(defaults.body_size === 22 && defaults.edge_particles === 8, "ui: water defaults should use small eight-particle drops");
+    expect(defaults.body_size === 15 && defaults.edge_particles === 8, "ui: water defaults should use small eight-particle drops");
+    expect(Math.abs(defaults.area_strength - 0.002) < 1e-9, "ui: area strength should default to 0.002");
 
     const rowCount = await evaluate("document.querySelectorAll('#params .param').length");
     expect(rowCount === paramKeys.length, "ui: one parameter row per default key");
@@ -490,8 +493,8 @@ async function main() {
     expect(bodyLifecycle.afterRemove.bodies === 6, "ui: removing the oldest drop should keep the pool size");
     expect(Math.abs(bodyLifecycle.afterRemove.hue - 198) < 1e-9, "ui: water drops should use the fixed light-blue hue");
     expect(bodyLifecycle.hues.length > 0 && bodyLifecycle.hues.every((hue) => Math.abs(hue - 198) < 1e-9), "ui: all water drops should share one hue");
-    expect(bodyLifecycle.sizeBefore.every((radius) => Math.abs(radius - 22) < 1e-6), "ui: existing drops should start at the original size");
-    expect(bodyLifecycle.sizeAfter.every((radius) => Math.abs(radius - 22) < 1e-6), "ui: body size should not rescale existing drops");
+    expect(bodyLifecycle.sizeBefore.every((radius) => Math.abs(radius - 15) < 1e-6), "ui: existing drops should start at the original size");
+    expect(bodyLifecycle.sizeAfter.every((radius) => Math.abs(radius - 15) < 1e-6), "ui: body size should not rescale existing drops");
     expect(Math.abs(bodyLifecycle.newRadius - 40) < 1e-6, "ui: body size should apply to newly emitted drops");
     expect(bodyLifecycle.radii.filter((radius) => Math.abs(radius - 40) < 1e-6).length === 1, "ui: only the new drop should use the new size");
     expect(bodyLifecycle.particles.length > 0 && bodyLifecycle.particles.every((count) => count === 24), "ui: edge particle count should rebuild every drop");
@@ -502,14 +505,14 @@ async function main() {
       const button = document.getElementById('grab-mode');
       const initial = { text: button.textContent, mode: demo.getGrabMode() };
       button.click();
-      const edge = { text: button.textContent, mode: demo.getGrabMode() };
-      button.click();
       const center = { text: button.textContent, mode: demo.getGrabMode() };
-      return { initial, edge, center };
+      button.click();
+      const edge = { text: button.textContent, mode: demo.getGrabMode() };
+      return { initial, center, edge };
     })()`);
-    expect(grabMode.initial.mode === "center" && grabMode.initial.text.includes("中心"), "ui: drag mode should start at center");
-    expect(grabMode.edge.mode === "edge" && grabMode.edge.text.includes("边缘"), "ui: drag mode should switch to edge");
-    expect(grabMode.center.mode === "center" && grabMode.center.text.includes("中心"), "ui: drag mode should switch back to center");
+    expect(grabMode.initial.mode === "edge" && grabMode.initial.text.includes("边缘"), "ui: drag mode should start at edge");
+    expect(grabMode.center.mode === "center" && grabMode.center.text.includes("中心"), "ui: drag mode should switch to center");
+    expect(grabMode.edge.mode === "edge" && grabMode.edge.text.includes("边缘"), "ui: drag mode should switch back to edge");
 
     const flow = await evaluate(`(async () => {
       const demo = window.__softBodyDemo;

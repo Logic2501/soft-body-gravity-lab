@@ -10,7 +10,7 @@
   const WORLD_H = 780;
   const ARENA = { x: 24, y: 24, w: 852, h: 732 };
   const CENTER = { x: ARENA.x + ARENA.w / 2, y: ARENA.y + ARENA.h / 2 };
-  const RADIUS = 22;
+  const RADIUS = 15;
   const EDGE_PARTICLES = 8;
   const INITIAL_DROPS = 6;
   const MAX_BODIES = 32;
@@ -19,7 +19,7 @@
   const METRICS_INTERVAL = 0.25;
   const WATER_CHECK_INTERVAL = 1 / 60;
   const EMITTER_INTERVAL = 1.0;
-  const MANUAL_EMIT_INTERVAL = 0.22;
+  const MANUAL_EMIT_INTERVAL = 0.44;
   const LAUNCH_HOLD = 0.34;
   const CONTOUR_CELL = 10;
   const CONTOUR_COLOR = "rgba(108, 224, 214, 0.26)";
@@ -65,7 +65,7 @@
       step: 1,
       decimals: 0,
       unit: "px",
-      help: "只影响之后发射的新水滴；已有和合并后的水滴不会被缩放。默认 22 px。",
+      help: "只影响之后发射的新水滴；已有和合并后的水滴不会被缩放。默认 15 px。",
     },
     {
       key: "edge_particles",
@@ -177,7 +177,7 @@
   templateSim.centerMu = 0;
   templateSim.edgeStiffness = 0.01;
   templateSim.bendingStiffness = 0;
-  templateSim.areaStrength = 0.001;
+  templateSim.areaStrength = 0.002;
   templateSim.shapeStrength = 0;
   templateSim.damping = 0.18;
   templateSim.restitution = 0.02;
@@ -213,7 +213,7 @@
   let emitCount = 0;
   let nextEmitterIndex = 0;
   let waterCheckTimer = 0;
-  let autoEmit = autoEmitCheckbox ? autoEmitCheckbox.checked : true;
+  let autoEmit = autoEmitCheckbox ? autoEmitCheckbox.checked : false;
   let emitterTimers = EMITTERS.map((_, index) => 0.35 + index * 0.45);
   const manualEmitterTimers = EMITTERS.map(() => MANUAL_EMIT_INTERVAL);
   const keyEmitterHeld = EMITTERS.map(() => false);
@@ -1564,6 +1564,6 @@
     }),
   };
 
-  setGrabMode("center");
+  setGrabMode("edge");
   requestAnimationFrame(frame);
 }());
