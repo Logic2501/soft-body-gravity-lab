@@ -101,11 +101,11 @@
       key: "area_strength",
       label: "面积保持",
       min: 0,
-      max: 0.01,
-      step: 0.0001,
-      decimals: 4,
-      unit: "",
-      help: "维持轮廓总面积。水流版缩小到 0–0.01，步进 0.0001；0 完全不约束。数值很小但仍是双精度浮点，不会因四位小数产生物理精度问题。",
+      max: 10,
+      step: 0.1,
+      decimals: 1,
+      unit: "×10⁻³",
+      help: "维持轮廓总面积。UI 以 ×10⁻³ 显示，范围 0–10、步进 0.1；默认 2 对应物理值 0.002。0 完全不约束。",
     },
     {
       key: "shape_strength",
@@ -242,7 +242,7 @@
       edge_particles: edgeParticles,
       edge_stiffness: sourceSim.edgeStiffness,
       bending_stiffness: sourceSim.bendingStiffness,
-      area_strength: sourceSim.areaStrength,
+      area_strength: sourceSim.areaStrength * 1000,
       shape_strength: sourceSim.shapeStrength,
       outline_smoothing: outlineSmoothing,
       damping: sourceSim.damping,
@@ -379,7 +379,7 @@
     body.centerMu = 0;
     body.edgeStiffness = values.edge_stiffness;
     body.bendingStiffness = values.bending_stiffness;
-    body.areaStrength = values.area_strength;
+    body.areaStrength = values.area_strength / 1000;
     body.shapeStrength = values.shape_strength;
     body.damping = values.damping;
     body.centerGrabDamping = values.center_grab_damping;
@@ -418,7 +418,7 @@
           body.bendingStiffness = displayValue;
           break;
         case "area_strength":
-          body.areaStrength = displayValue;
+          body.areaStrength = displayValue / 1000;
           break;
         case "shape_strength":
           body.shapeStrength = displayValue;

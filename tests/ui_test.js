@@ -239,7 +239,7 @@ async function main() {
     expect(paramKeys.length > 0, "ui: defaults should expose parameter keys");
     expect(!("center_mu" in defaults), "ui: water scene should not expose center gravity");
     expect(defaults.body_size === 15 && defaults.edge_particles === 8, "ui: water defaults should use small eight-particle drops");
-    expect(Math.abs(defaults.area_strength - 0.002) < 1e-9, "ui: area strength should default to 0.002");
+    expect(Math.abs(defaults.area_strength - 2) < 1e-9, "ui: area strength should display 2 ×10⁻³");
 
     const rowCount = await evaluate("document.querySelectorAll('#params .param').length");
     expect(rowCount === paramKeys.length, "ui: one parameter row per default key");
@@ -276,13 +276,13 @@ async function main() {
         edgeText: document.querySelector('[data-key="edge_stiffness"] .param-number').value,
       };
     })()`);
-    expect(Math.abs(fineRanges.areaMax - 0.01) < 1e-9, "ui: area strength should use the 0–0.01 fine range");
+    expect(Math.abs(fineRanges.areaMax - 10) < 1e-9, "ui: area strength should use the 0–10 ×10⁻³ range");
     expect(Math.abs(fineRanges.shapeMax - 0.01) < 1e-9, "ui: shape strength should use the 0–0.01 fine range");
     expect(Math.abs(fineRanges.edgeMax - 0.03) < 1e-9, "ui: edge stiffness should use the 0–0.03 fine range");
-    expect(Math.abs(fineRanges.areaStep - 0.0001) < 1e-9, "ui: area strength should step by 0.0001");
+    expect(Math.abs(fineRanges.areaStep - 0.1) < 1e-9, "ui: area strength should step by 0.1 ×10⁻³");
     expect(Math.abs(fineRanges.shapeStep - 0.001) < 1e-9, "ui: shape strength should step by 0.001");
     expect(Math.abs(fineRanges.edgeStep - 0.001) < 1e-9, "ui: edge stiffness should step by 0.001");
-    expect(Math.abs(Number(fineRanges.areaText) - defaults.area_strength) < 1e-9 && /^\d+\.\d{4}$/.test(fineRanges.areaText), "ui: area strength should display four decimals");
+    expect(Math.abs(Number(fineRanges.areaText) - defaults.area_strength) < 1e-9 && /^\d+\.\d$/.test(fineRanges.areaText), "ui: area strength should display one decimal");
     expect(Math.abs(Number(fineRanges.shapeText) - defaults.shape_strength) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.shapeText), "ui: shape strength should display three decimals");
     expect(Math.abs(Number(fineRanges.edgeText) - defaults.edge_stiffness) < 1e-9 && /^\d+\.\d{3}$/.test(fineRanges.edgeText), "ui: edge stiffness should display three decimals");
 
